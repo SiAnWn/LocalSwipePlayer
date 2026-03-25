@@ -6,7 +6,6 @@ import MediaPlayer
 struct VideoPlayerView: View {
     let videoURL: URL
     let fileName: String
-    let isActive: Bool
     @EnvironmentObject var videoModel: VideoModel
 
     @State private var player: AVPlayer?
@@ -32,9 +31,9 @@ struct VideoPlayerView: View {
                 if let player = player {
                     VideoPlayerController(player: player)
                         .onAppear {
-                            if isActive { player.play() }
                             startTimeObserver()
-                            if isActive && videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
+                            // 尝试跳转到记忆位置（仅当是当前视频时）
+                            if videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
                                 let saved = videoModel.currentTime
                                 if saved > 0 && saved < duration {
                                     player.seek(to: CMTime(seconds: saved, preferredTimescale: 600))
@@ -78,9 +77,10 @@ struct VideoPlayerView: View {
                 showFileNameBriefly()
             }
         }
-        .onChange(of: isActive) { newValue in
-            if newValue {
-                if let player = player, player.rate == 0 { player.play() }
+        .onReceive(videoModel.$currentIndex) { newIndex in
+            let shouldPlay = newIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1)
+            if shouldPlay {
+                player?.play()
             } else {
                 player?.pause()
             }
@@ -104,6 +104,15 @@ struct VideoPlayerView: View {
             if loopEnabled {
                 player?.seek(to: .zero)
                 player?.play()
+            }
+        }
+        // 创建后根据当前索引决定播放状态
+        if let player = player {
+            let shouldPlay = videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1)
+            if shouldPlay {
+                player.play()
+            } else {
+                player.pause()
             }
         }
     }
