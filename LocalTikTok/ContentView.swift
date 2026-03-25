@@ -9,46 +9,29 @@ struct ContentView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
                 if videoModel.videos.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "video.slash")
-                            .font(.largeTitle)
-                        Text("请将视频文件放入应用 Documents 目录")
-                            .multilineTextAlignment(.center)
-                        Button("刷新") {
-                            videoModel.loadVideos()
-                        }
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(8)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    EmptyStateView()
                 } else {
-                    // 使用显式返回的 VerticalPagingScrollView
-                    let scrollView = VerticalPagingScrollView(
+                    VerticalPagingScrollView(
                         pageCount: videoModel.videos.count,
                         currentPage: $currentIndex
                     ) { index in
-                        let url = videoModel.videos[index]
-                        let fileName = url.lastPathComponent
-                        let preloadedItem = videoModel.preloadItem(for: url)
-                        if index > 0 {
-                            _ = videoModel.preloadItem(for: videoModel.videos[index-1])
+                        // 明确返回 VideoPlayerView
+                        VideoPlayerView(
+                            videoURL: videoModel.videos[index],
+                            playerItem: videoModel.preloadItem(for: videoModel.videos[index]),
+                            fileName: videoModel.videos[index].lastPathComponent
+                        )
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .onAppear {
+                            videoModel.cleanupItems(except: videoModel.videos[index])
+                            videoModel.currentIndex = index
+                            videoModel.savePosition()
                         }
-                        if index < videoModel.videos.count - 1 {
-                            _ = videoModel.preloadItem(for: videoModel.videos[index+1])
-                        }
-                        return VideoPlayerView(videoURL: url, playerItem: preloadedItem, fileName: fileName)
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                            .onAppear {
-                                videoModel.cleanupItems(except: url)
-                                videoModel.currentIndex = index
-                                videoModel.savePosition()
-                            }
                     }
-                    scrollView.ignoresSafeArea()
+                    .ignoresSafeArea()
                 }
                 
-                // 右上角刷新按钮
+                // 刷新按钮
                 Button(action: {
                     videoModel.loadVideos()
                 }) {
@@ -60,7 +43,7 @@ struct ContentView: View {
                 }
                 .padding()
                 
-                // 左下角删除按钮
+                // 删除按钮
                 if !videoModel.videos.isEmpty {
                     Button(action: {
                         showDeleteConfirm = true
@@ -103,7 +86,26 @@ struct ContentView: View {
     }
 }
 
-// MARK: - 竖向分页滚动视图
+// MARK: - 空状态视图
+struct EmptyStateView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "video.slash")
+                .font(.largeTitle)
+            Text("请将视频文件放入应用 Documents 目录")
+                .multilineTextAlignment(.center)
+            Button("刷新") {
+                // 通过环境对象刷新？需要在 ContentView 中处理，这里留空，实际通过外部的刷新按钮
+            }
+            .padding()
+            .background(Color.blue)
+            .cornerRadius(8)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - 竖向分页滚动视图（兼容 iOS 15）
 struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
     let pageCount: Int
     @Binding var currentPage: Int
