@@ -1,13 +1,16 @@
 import SwiftUI
 import AVKit
 import Combine
+import UIKit
 import Photos
+import MediaPlayer
 
 struct VideoPlayerView: View {
     let videoURL: URL
     let playerItem: AVPlayerItem?
     let fileName: String
     @EnvironmentObject var videoModel: VideoModel
+    
     @State private var player: AVPlayer?
     @State private var isPlaying = false
     @State private var currentTime: TimeInterval = 0
@@ -50,8 +53,7 @@ struct VideoPlayerView: View {
                             isPlaying = true
                             startTimeObserver()
                             // 尝试跳转到记忆位置
-                            if let videoModel = (UIApplication.shared.delegate as? AppDelegate)?.videoModel,
-                               videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
+                            if videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
                                 let savedTime = videoModel.currentTime
                                 if savedTime > 0 && savedTime < duration {
                                     player.seek(to: CMTime(seconds: savedTime, preferredTimescale: 600))
@@ -63,10 +65,8 @@ struct VideoPlayerView: View {
                             isPlaying = false
                             removeTimeObserver()
                             // 保存当前进度
-                            if let videoModel = (UIApplication.shared.delegate as? AppDelegate)?.videoModel {
-                                videoModel.currentTime = currentTime
-                                videoModel.savePosition()
-                            }
+                            videoModel.currentTime = currentTime
+                            videoModel.savePosition()
                         }
                 } else {
                     Color.black
@@ -195,7 +195,7 @@ struct VideoPlayerView: View {
                         isAdjustingVolume = false
                     }
             )
-            // 单击显示/隐藏进度条
+            // 单击显示/隐藏进度条和文件名
             .onTapGesture {
                 toggleControls()
                 showFileNameBriefly()
@@ -334,6 +334,3 @@ struct VideoPlayerController: UIViewControllerRepresentable {
     
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {}
 }
-
-// 用于调节音量的 MPVolumeView 扩展
-import MediaPlayer
