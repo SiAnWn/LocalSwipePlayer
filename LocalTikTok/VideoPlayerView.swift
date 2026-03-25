@@ -4,9 +4,10 @@ import AVFoundation
 
 struct VideoPlayerView: UIViewRepresentable {
     let url: URL
+    let isActive: Bool
+    @EnvironmentObject var videoModel: VideoModel
     @Binding var currentTime: TimeInterval
     @Binding var duration: TimeInterval
-    let isActive: Bool
     
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
@@ -15,7 +16,17 @@ struct VideoPlayerView: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: UIView, context: Context) {
-        // 如果当前播放器的 URL 与此视图的 URL 匹配，则添加或更新 layer
+        // 预加载当前视频
+        _ = videoModel.preloadItem(for: url)
+        // 预加载相邻视频
+        if let index = videoModel.videos.firstIndex(of: url) {
+            if index > 0 { _ = videoModel.preloadItem(for: videoModel.videos[index-1]) }
+            if index < videoModel.videos.count - 1 { _ = videoModel.preloadItem(for: videoModel.videos[index+1]) }
+        }
+        
+        // 清理其他缓存
+        videoModel.cleanupItems(except: url)
+        
         if VideoPlayerManager.shared.currentURL == url {
             if let layer = VideoPlayerManager.shared.getPlayerLayer() {
                 if layer.superlayer != uiView.layer {
@@ -26,8 +37,13 @@ struct VideoPlayerView: UIViewRepresentable {
                 }
             }
         } else if isActive {
-            // 当前视图变为激活，但播放器正在播放其他视频，则切换
             VideoPlayerManager.shared.loadVideo(url: url, autoPlay: true)
+        }
+        
+        // 保存当前位置
+        if isActive {
+            videoModel.currentIndex = videoModel.videos.firstIndex(of: url) ?? 0
+            videoModel.savePosition()
         }
     }
 }
