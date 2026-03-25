@@ -23,15 +23,11 @@ struct VideoPagerView: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ pageVC: UIPageViewController, context: Context) {
-        // 当外部 currentIndex 改变时，同步滚动（禁用动画，避免闪烁）
+        // 当外部 currentIndex 改变时（如删除视频或外部直接设置），同步滚动
         if let currentVC = pageVC.viewControllers?.first as? VideoPageViewController,
            currentVC.videoURL != videoURLs[currentIndex] {
             let newVC = VideoPageViewController(videoURL: videoURLs[currentIndex])
-            // 禁用隐式动画
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
             pageVC.setViewControllers([newVC], direction: .forward, animated: false)
-            CATransaction.commit()
             context.coordinator.lastIndex = currentIndex
         }
     }
@@ -79,6 +75,7 @@ struct VideoPagerView: UIViewControllerRepresentable {
                   let currentVC = pageViewController.viewControllers?.first as? VideoPageViewController,
                   let newIndex = parent.videoURLs.firstIndex(of: currentVC.videoURL) else { return }
             
+            // 避免递归
             guard !isRandomJumping else { return }
             
             // 判断向上滑动（新索引 < 旧索引）
@@ -89,17 +86,13 @@ struct VideoPagerView: UIViewControllerRepresentable {
                     randomIndex = Int.random(in: 0..<parent.videoURLs.count)
                 }
                 isRandomJumping = true
-                // 延迟一小段时间，让当前滑动动画完全结束，再跳转，避免闪烁
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    // 禁用动画进行跳转
-                    CATransaction.begin()
-                    CATransaction.setDisableActions(true)
-                    self.parent.currentIndex = randomIndex
-                    CATransaction.commit()
-                    self.isRandomJumping = false
-                }
+                // 直接在当前视图控制器上替换视频，不替换视图控制器本身，无闪烁
+                let randomURL = parent.videoURLs[randomIndex]
+                currentVC.replaceVideo(with: randomURL)
+                parent.currentIndex = randomIndex
+                isRandomJumping = false
             } else {
-                // 向下滑动或未变，正常更新
+                // 向下滑动或未变，正常更新 currentIndex
                 parent.currentIndex = newIndex
             }
             lastIndex = parent.currentIndex
@@ -107,9 +100,9 @@ struct VideoPagerView: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - 视频页面视图控制器（保持不变）
+// MARK: - 视频页面视图控制器（支持动态更换视频，消除闪烁）
 class VideoPageViewController: UIViewController {
-    let videoURL: URL
+    private(set) var videoURL: URL
     private var playerViewController: AVPlayerViewController?
     private var player: AVPlayer?
     private var timeObserver: Any?
@@ -166,6 +159,40 @@ class VideoPageViewController: UIViewController {
         ) { [weak self] _ in
             self?.player?.seek(to: .zero)
             self?.player?.play()
+        }
+    }
+    
+    // 动态更换视频，不重建视图控制器，避免闪烁
+    func replaceVideo(with newURL: URL) {
+        guard videoURL != newURL else { return }
+        videoURL = newURL
+        
+        // 移除旧的观察者
+        if let currentItem = player?.currentItem {
+            NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: currentItem)
+        }
+        
+        // 创建新的播放项
+        let asset = AVURLAsset(url: newURL)
+        let playerItem = AVPlayerItem(asset: asset)
+        playerItem.preferredForwardBufferDuration = 5.0
+        
+        // 替换播放器的当前项
+        player?.replaceCurrentItem(with: playerItem)
+        
+        // 重新添加循环播放观察者
+        NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: player?.currentItem,
+            queue: .main
+        ) { [weak self] _ in
+            self?.player?.seek(to: .zero)
+            self?.player?.play()
+        }
+        
+        // 如果当前页面可见，自动播放
+        if isPlaying {
+            player?.play()
         }
     }
     
