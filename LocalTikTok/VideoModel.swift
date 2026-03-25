@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import AVFoundation
 
 class VideoModel: ObservableObject {
@@ -23,6 +24,7 @@ class VideoModel: ObservableObject {
             let videoFiles = allFiles.filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
             DispatchQueue.main.async {
                 self.videos = videoFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }
+                self.playerItems.removeAll()
                 if self.currentIndex >= self.videos.count {
                     self.currentIndex = max(0, self.videos.count - 1)
                 }
