@@ -29,23 +29,23 @@ struct ContentView: View {
                     ) { index in
                         let url = videoModel.videos[index]
                         let fileName = url.lastPathComponent
-                        // 预加载当前及相邻视频
                         let preloadedItem = videoModel.preloadItem(for: url)
-                        if index > 0 {
-                            _ = videoModel.preloadItem(for: videoModel.videos[index-1])
-                        }
-                        if index < videoModel.videos.count - 1 {
-                            _ = videoModel.preloadItem(for: videoModel.videos[index+1])
-                        }
                         
                         VideoPlayerView(
                             videoURL: url,
                             playerItem: preloadedItem,
                             fileName: fileName,
-                            isActive: index == currentIndex  // 传入激活状态
+                            isActive: index == currentIndex
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .onAppear {
+                            // 预加载相邻视频（在视图出现时预加载，保证即时性）
+                            if index > 0 {
+                                _ = videoModel.preloadItem(for: videoModel.videos[index-1])
+                            }
+                            if index < videoModel.videos.count - 1 {
+                                _ = videoModel.preloadItem(for: videoModel.videos[index+1])
+                            }
                             videoModel.cleanupItems(except: url)
                             videoModel.currentIndex = index
                             videoModel.savePosition()
