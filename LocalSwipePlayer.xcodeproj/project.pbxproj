@@ -1,0 +1,173 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		8D1F2A3E2B5F4A3C005F1A2B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D1F2A3D2B5F4A3C005F1A2B /* ContentView.swift */; };
+		8D1F2A412B5F4A5D005F1A2B /* LocalSwipePlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D1F2A402B5F4A5D005F1A2B /* LocalSwipePlayerApp.swift */; };
+		8D1F2A502B5F4D0E005F1A2B /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 8D1F2A4F2B5F4D0E005F1A2B /* Info.plist */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		8D1F2A3D2B5F4A3C005F1A2B /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSwipePlayer/ContentView.swift; sourceTree = "<group>"; };
+		8D1F2A402B5F4A5D005F1A2B /* LocalSwipePlayerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalSwipePlayer/LocalSwipePlayerApp.swift; sourceTree = "<group>"; };
+		8D1F2A4F2B5F4D0E005F1A2B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		8D1F2A452B5F4B7E005F1A2B /* LocalSwipePlayer.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = LocalSwipePlayer.xcodeproj; path = LocalSwipePlayer.xcodeproj; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		8D1F2A3A2B5F4A2D005F1A2B /* LocalSwipePlayer */ = {
+			isa = PBXGroup;
+			children = (
+				8D1F2A3D2B5F4A3C005F1A2B /* ContentView.swift */,
+				8D1F2A402B5F4A5D005F1A2B /* LocalSwipePlayerApp.swift */,
+			);
+			path = "";
+			sourceTree = "<group>";
+		};
+		8D1F2A442B5F4B6E005F1A2B /* Project */ = {
+			isa = PBXGroup;
+			children = (
+				8D1F2A3A2B5F4A2D005F1A2B /* LocalSwipePlayer */,
+				8D1F2A4F2B5F4D0E005F1A2B /* Info.plist */,
+				8D1F2A452B5F4B7E005F1A2B /* LocalSwipePlayer.xcodeproj */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		8D1F2A472B5F4B9F005F1A2B /* LocalSwipePlayer */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8D1F2A4A2B5F4B9F005F1A2B /* Build configuration list for PBXNativeTarget "LocalSwipePlayer" */;
+			buildPhases = (
+				8D1F2A432B5F4B9F005F1A2B /* Sources */,
+				8D1F2A492B5F4B9F005F1A2B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LocalSwipePlayer;
+			productName = LocalSwipePlayer;
+			productReference = 8D1F2A482B5F4B9F005F1A2B /* LocalSwipePlayer.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8D1F2A4B2B5F4B9F005F1A2B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					8D1F2A472B5F4B9F005F1A2B = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = 8D1F2A4C2B5F4B9F005F1A2B /* Build configuration list for PBXProject "LocalSwipePlayer" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = 8D1F2A442B5F4B6E005F1A2B /* Project */;
+			productRefGroup = 8D1F2A442B5F4B6E005F1A2B /* Project */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8D1F2A472B5F4B9F005F1A2B /* LocalSwipePlayer */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		8D1F2A432B5F4B9F005F1A2B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8D1F2A3E2B5F4A3C005F1A2B /* ContentView.swift in Sources */,
+				8D1F2A412B5F4A5D005F1A2B /* LocalSwipePlayerApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		8D1F2A492B5F4B9F005F1A2B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8D1F2A502B5F4D0E005F1A2B /* Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		8D1F2A4D2B5F4B9F005F1A2B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourname.LocalSwipePlayer;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		8D1F2A4E2B5F4B9F005F1A2B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGNING_ALLOWED = NO;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourname.LocalSwipePlayer;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		8D1F2A4A2B5F4B9F005F1A2B /* Build configuration list for PBXNativeTarget "LocalSwipePlayer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8D1F2A4D2B5F4B9F005F1A2B /* Debug */,
+				8D1F2A4E2B5F4B9F005F1A2B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8D1F2A4C2B5F4B9F005F1A2B /* Build configuration list for PBXProject "LocalSwipePlayer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8D1F2A4D2B5F4B9F005F1A2B /* Debug */,
+				8D1F2A4E2B5F4B9F005F1A2B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 8D1F2A4B2B5F4B9F005F1A2B /* Project object */;
+}
