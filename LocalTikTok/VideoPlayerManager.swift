@@ -26,7 +26,7 @@ class VideoPlayerManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self, let url = self.currentURL else { return }
+            guard let self = self, let _ = self.currentURL else { return }
             self.seek(to: 0)
             self.play()
         }
