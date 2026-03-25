@@ -1,13 +1,13 @@
 import UIKit
 import SwiftUI
 import AVFoundation
-import MediaPlayer   // 添加此导入以使用 MPVolumeView
+import MediaPlayer  // 添加 MediaPlayer 支持 MPVolumeView
 
 class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
     private var viewControllersCache: [UIViewController] = []
     private let videoModel: VideoModel
     private let onPageChanged: (Int) -> Void
-    private var lastPage: Int = 0   // 用于随机播放判断
+    private var lastPage: Int = 0
     private var isRandomJumping = false
 
     init(videoModel: VideoModel, onPageChanged: @escaping (Int) -> Void) {
@@ -39,7 +39,6 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
         }
     }
     
-    // 重命名避免与 UIPageViewController 的 viewControllers 冲突
     func getViewController(at index: Int) -> UIViewController? {
         guard index >= 0 && index < viewControllersCache.count else { return nil }
         return viewControllersCache[index]
@@ -62,7 +61,6 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
     
     // MARK: - UIPageViewControllerDelegate
     func pageViewController(_ pageViewController: UIPageViewController, willTransitionTo pendingViewControllers: [UIViewController]) {
-        // 记录滚动前的页码
         if let currentVC = viewControllers?.first as? VideoPlayerContainerViewController,
            let currentIndex = videoModel.videos.firstIndex(of: currentVC.videoURL) {
             lastPage = currentIndex
@@ -73,7 +71,7 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
         guard completed, let currentVC = viewControllers?.first as? VideoPlayerContainerViewController,
               let newIndex = videoModel.videos.firstIndex(of: currentVC.videoURL) else { return }
         
-        // 随机播放逻辑：向上滑动（新页码 < 旧页码）时随机跳转
+        // 向上滑动随机跳转（新索引小于旧索引）
         if newIndex < lastPage && videoModel.videos.count > 1 {
             var randomIndex = Int.random(in: 0..<videoModel.videos.count)
             while randomIndex == newIndex {
@@ -84,20 +82,17 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
                 setViewControllers([randomVC], direction: .forward, animated: true) { [weak self] _ in
                     self?.isRandomJumping = false
                 }
-                // 更新模型索引和回调
                 videoModel.currentIndex = randomIndex
                 onPageChanged(randomIndex)
                 return
             }
         }
         
-        // 正常切换
         videoModel.currentIndex = newIndex
         onPageChanged(newIndex)
     }
 }
 
-// MARK: - 视频容器视图控制器
 class VideoPlayerContainerViewController: UIViewController {
     var videoURL: URL!
     weak var videoModel: VideoModel!
@@ -122,7 +117,6 @@ class VideoPlayerContainerViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         isActive = true
-        // 如果当前播放器的 URL 与此页不同，则加载
         if VideoPlayerManager.shared.currentURL != videoURL {
             VideoPlayerManager.shared.loadVideo(url: videoURL, autoPlay: true)
         } else {
@@ -130,13 +124,11 @@ class VideoPlayerContainerViewController: UIViewController {
                 VideoPlayerManager.shared.play()
             }
         }
-        // 添加播放器层（如果还没添加）
-        if playerLayer == nil {
-            if let layer = VideoPlayerManager.shared.getPlayerLayer() {
-                layer.frame = view.bounds
-                view.layer.insertSublayer(layer, at: 0)
-                playerLayer = layer
-            }
+        // 添加播放器层
+        if playerLayer == nil, let layer = VideoPlayerManager.shared.getPlayerLayer() {
+            layer.frame = view.bounds
+            view.layer.insertSublayer(layer, at: 0)
+            playerLayer = layer
         }
     }
     
@@ -144,7 +136,6 @@ class VideoPlayerContainerViewController: UIViewController {
         super.viewWillDisappear(animated)
         isActive = false
         VideoPlayerManager.shared.pause()
-        // 不移除 layer，避免闪烁
     }
     
     override func viewDidLayoutSubviews() {
@@ -214,7 +205,7 @@ class VideoPlayerContainerViewController: UIViewController {
             timeStack.topAnchor.constraint(equalTo: progressSlider!.bottomAnchor, constant: 8)
         ])
         
-        // 更新 UI 的定时器
+        // 定时更新 UI
         Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self, self.isActive else { return }
             self.progressSlider?.value = Float(VideoPlayerManager.shared.currentTime)
