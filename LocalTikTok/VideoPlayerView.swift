@@ -1,6 +1,6 @@
 import SwiftUI
-import AVKit
 import UIKit
+import AVFoundation
 
 struct VideoPlayerView: UIViewRepresentable {
     let url: URL
@@ -26,7 +26,7 @@ struct VideoPlayerView: UIViewRepresentable {
                 }
             }
         } else if isActive {
-            // 如果当前视图变为激活，但播放器正在播放其他视频，则切换
+            // 当前视图变为激活，但播放器正在播放其他视频，则切换
             VideoPlayerManager.shared.loadVideo(url: url, autoPlay: true)
         }
     }
