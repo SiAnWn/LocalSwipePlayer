@@ -12,6 +12,11 @@ class VideoPlayerManager: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var rate: Float = 1.0
     
+    // 公开获取 player 的 layer
+    var playerLayer: AVPlayerLayer? {
+        return player?.layer as? AVPlayerLayer
+    }
+    
     private init() {
         setupPlayer()
     }
