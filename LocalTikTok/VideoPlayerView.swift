@@ -6,6 +6,7 @@ import MediaPlayer
 struct VideoPlayerView: View {
     let videoURL: URL
     let fileName: String
+    let isActive: Bool
     @EnvironmentObject var videoModel: VideoModel
 
     @State private var player: AVPlayer?
@@ -19,6 +20,7 @@ struct VideoPlayerView: View {
     @State private var speed: Float = 1.0
     @State private var timeObserver: Any?
     @State private var loopEnabled = true
+    @State private var playerReady = false  // 标记播放器是否已创建
 
     @State private var isAdjustingBrightness = false
     @State private var isAdjustingVolume = false
@@ -32,8 +34,8 @@ struct VideoPlayerView: View {
                     VideoPlayerController(player: player)
                         .onAppear {
                             startTimeObserver()
-                            // 尝试跳转到记忆位置（仅当是当前视频时）
-                            if videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
+                            // 尝试跳转到记忆位置（仅当激活时）
+                            if isActive && videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
                                 let saved = videoModel.currentTime
                                 if saved > 0 && saved < duration {
                                     player.seek(to: CMTime(seconds: saved, preferredTimescale: 600))
@@ -41,7 +43,6 @@ struct VideoPlayerView: View {
                             }
                         }
                         .onDisappear {
-                            player.pause()
                             removeTimeObserver()
                             videoModel.currentTime = currentTime
                             videoModel.savePosition()
@@ -77,17 +78,21 @@ struct VideoPlayerView: View {
                 showFileNameBriefly()
             }
         }
-        .onReceive(videoModel.$currentIndex) { newIndex in
-            let shouldPlay = newIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1)
-            if shouldPlay {
-                player?.play()
-            } else {
-                player?.pause()
+        .onChange(of: isActive) { newValue in
+            if playerReady {
+                if newValue {
+                    // 激活时播放
+                    player?.play()
+                } else {
+                    // 非激活时暂停
+                    player?.pause()
+                }
             }
         }
     }
 
     private func setupPlayer() {
+        // 从 videoModel 获取预加载的 item
         if let preloadedItem = videoModel.preloadItem(for: videoURL) {
             player = AVPlayer(playerItem: preloadedItem)
         } else {
@@ -96,6 +101,9 @@ struct VideoPlayerView: View {
             item.preferredForwardBufferDuration = 5.0
             player = AVPlayer(playerItem: item)
         }
+        playerReady = true
+
+        // 循环播放
         NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player?.currentItem,
@@ -106,14 +114,10 @@ struct VideoPlayerView: View {
                 player?.play()
             }
         }
-        // 创建后根据当前索引决定播放状态
-        if let player = player {
-            let shouldPlay = videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1)
-            if shouldPlay {
-                player.play()
-            } else {
-                player.pause()
-            }
+
+        // 如果当前是激活状态，立即播放
+        if isActive {
+            player?.play()
         }
     }
 
@@ -210,6 +214,8 @@ struct VideoPlayerView: View {
     }
 }
 
+// 其余子视图（ControlBarView, FileNameOverlayView, SpeedMenuView, VideoPlayerController）保持不变
+// 为了完整，这里也附上，但和之前一样，可以复用
 struct ControlBarView: View {
     @Binding var currentTime: TimeInterval
     let duration: TimeInterval
