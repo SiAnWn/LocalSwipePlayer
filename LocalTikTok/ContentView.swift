@@ -21,7 +21,7 @@ struct ContentView: View {
                     .cornerRadius(8)
                 }
             } else {
-                VideoPagerView(videoURLs: videoModel.videos, currentIndex: $currentIndex)
+                VideoPagerView(videoURLs: videoModel.videos, currentIndex: $currentIndex, videoModel: videoModel)
                     .ignoresSafeArea()
                     .onAppear {
                         // 预加载所有视频的 asset（可选）
