@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 import AVFoundation
 import MediaPlayer
 
@@ -6,7 +7,6 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
     private var viewControllersCache: [UIViewController] = []
     private let videoModel: VideoModel
     private let onPageChanged: (Int) -> Void
-    private var isRandomJumping = false
     
     init(videoModel: VideoModel, onPageChanged: @escaping (Int) -> Void) {
         self.videoModel = videoModel
@@ -23,7 +23,7 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
     override func viewDidLoad() {
         super.viewDidLoad()
         setupViewControllersCache()
-        if let firstVC = getViewController(at: videoModel.currentIndex) {
+        if let firstVC = viewController(at: videoModel.currentIndex) {
             setViewControllers([firstVC], direction: .forward, animated: false, completion: nil)
         }
     }
@@ -37,7 +37,7 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
         }
     }
     
-    func getViewController(at index: Int) -> UIViewController? {
+    func viewController(at index: Int) -> UIViewController? {
         guard index >= 0 && index < viewControllersCache.count else { return nil }
         return viewControllersCache[index]
     }
@@ -48,7 +48,7 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
               let currentIndex = videoModel.videos.firstIndex(of: currentVC.videoURL) else { return nil }
         let previousIndex = currentIndex - 1
         guard previousIndex >= 0 else { return nil }
-        return getViewController(at: previousIndex)
+        return viewController(at: previousIndex)
     }
     
     func pageViewController(_ pageViewController: UIPageViewController, viewControllerAfter viewController: UIViewController) -> UIViewController? {
@@ -56,7 +56,7 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
               let currentIndex = videoModel.videos.firstIndex(of: currentVC.videoURL) else { return nil }
         let nextIndex = currentIndex + 1
         guard nextIndex < videoModel.videos.count else { return nil }
-        return getViewController(at: nextIndex)
+        return viewController(at: nextIndex)
     }
     
     // MARK: - UIPageViewControllerDelegate
@@ -69,12 +69,11 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
     }
 }
 
-// 每个页面的容器视图控制器
+// MARK: - 每个页面的容器视图控制器
 class VideoPlayerContainerViewController: UIViewController {
     var videoURL: URL!
     weak var videoModel: VideoModel!
     private var playerLayer: AVPlayerLayer?
-    private var isActive = false
     private var fileNameLabel: UILabel?
     private var controlsView: UIView?
     private var progressSlider: UISlider?
@@ -89,29 +88,30 @@ class VideoPlayerContainerViewController: UIViewController {
         view.backgroundColor = .black
         setupUI()
         setupGestures()
-        setupPlayerLayer()
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        isActive = true
-        // 如果当前播放器的 URL 与此页不同，则加载
+        // 确保播放器加载当前视频
         if VideoPlayerManager.shared.currentURL != videoURL {
             VideoPlayerManager.shared.loadVideo(url: videoURL, autoPlay: true)
         } else {
-            // 相同则确保播放
+            // 如果已经是当前视频，但可能处于暂停状态，则播放
             if !VideoPlayerManager.shared.isPlaying {
                 VideoPlayerManager.shared.play()
             }
         }
-        // 同步进度条和标签
-        updateUI()
+        // 添加或更新播放器 layer
+        addPlayerLayer()
     }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        isActive = false
+        // 离开页面时暂停播放
         VideoPlayerManager.shared.pause()
+        // 移除 layer（因为页面将要消失，不再需要显示）
+        playerLayer?.removeFromSuperlayer()
+        playerLayer = nil
     }
     
     override func viewDidLayoutSubviews() {
@@ -119,17 +119,17 @@ class VideoPlayerContainerViewController: UIViewController {
         playerLayer?.frame = view.bounds
     }
     
-    private func setupPlayerLayer() {
-        // 注意：不能每次都创建新的 layer，应该获取共享的 player 的 layer
-        if let existingLayer = VideoPlayerManager.shared.player?.currentItem?.asset as? AVURLAsset, existingLayer.url == videoURL {
-            // 如果已存在且匹配，则复用
-            playerLayer = VideoPlayerManager.shared.player?.layer as? AVPlayerLayer
-        } else {
-            playerLayer = VideoPlayerManager.shared.getPlayerLayer()
+    private func addPlayerLayer() {
+        // 获取全局播放器 layer
+        let newLayer = VideoPlayerManager.shared.getPlayerLayer()
+        // 如果已有 layer 且与当前不同，移除旧的
+        if playerLayer != newLayer {
+            playerLayer?.removeFromSuperlayer()
+            playerLayer = newLayer
         }
-        playerLayer?.frame = view.bounds
-        if let layer = playerLayer {
+        if let layer = playerLayer, layer.superlayer != view.layer {
             view.layer.insertSublayer(layer, at: 0)
+            layer.frame = view.bounds
         }
     }
     
@@ -195,10 +195,12 @@ class VideoPlayerContainerViewController: UIViewController {
             timeStack.topAnchor.constraint(equalTo: progressSlider!.bottomAnchor, constant: 8)
         ])
         
-        // 定时更新 UI
+        // 更新 UI 的定时器
         Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            guard let self = self, self.isActive else { return }
-            self.updateUI()
+            guard let self = self else { return }
+            self.progressSlider?.value = Float(VideoPlayerManager.shared.currentTime)
+            self.durationLabel?.text = self.formatTime(VideoPlayerManager.shared.duration)
+            self.currentTimeLabel?.text = self.formatTime(VideoPlayerManager.shared.currentTime)
         }
         
         progressSlider?.addTarget(self, action: #selector(sliderChanged), for: .valueChanged)
@@ -207,16 +209,6 @@ class VideoPlayerContainerViewController: UIViewController {
     @objc private func sliderChanged() {
         let newTime = TimeInterval(progressSlider?.value ?? 0)
         VideoPlayerManager.shared.seek(to: newTime)
-    }
-    
-    private func updateUI() {
-        progressSlider?.value = Float(VideoPlayerManager.shared.currentTime)
-        currentTimeLabel?.text = formatTime(VideoPlayerManager.shared.currentTime)
-        durationLabel?.text = formatTime(VideoPlayerManager.shared.duration)
-        // 如果 duration 变化，更新 slider 的最大值
-        if progressSlider?.maximumValue != Float(VideoPlayerManager.shared.duration) {
-            progressSlider?.maximumValue = Float(VideoPlayerManager.shared.duration)
-        }
     }
     
     private func setupGestures() {
@@ -230,7 +222,6 @@ class VideoPlayerContainerViewController: UIViewController {
         view.addGestureRecognizer(longPress)
         singleTap.require(toFail: doubleTap)
         
-        // 亮度/音量手势
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
         view.addGestureRecognizer(pan)
     }
@@ -258,6 +249,7 @@ class VideoPlayerContainerViewController: UIViewController {
             if isLeft {
                 startBrightness = UIScreen.main.brightness
             } else {
+                // 音量初始值
                 let volumeView = MPVolumeView()
                 if let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider {
                     startVolume = slider.value
@@ -277,6 +269,7 @@ class VideoPlayerContainerViewController: UIViewController {
         }
         gesture.setTranslation(.zero, in: view)
     }
+    
     private var startBrightness: CGFloat = 0
     private var startVolume: Float = 0
     
@@ -346,7 +339,6 @@ class VideoPlayerContainerViewController: UIViewController {
     }
     
     private func captureScreenshot() {
-        guard let playerLayer = playerLayer else { return }
         let time = VideoPlayerManager.shared.currentTime
         let asset = AVAsset(url: videoURL)
         let generator = AVAssetImageGenerator(asset: asset)
