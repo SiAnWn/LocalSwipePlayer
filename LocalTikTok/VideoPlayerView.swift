@@ -1,19 +1,20 @@
 import SwiftUI
 import AVKit
+import MediaPlayer
 
 struct VideoPlayerView: View {
     let videoURL: URL
-    let isActive: Bool
+    let fileName: String
     @EnvironmentObject var videoModel: VideoModel
-
+    
     @State private var player: AVPlayer?
     @State private var currentTime: TimeInterval = 0
     @State private var duration: TimeInterval = 0
+    @State private var isPlaying = false
     @State private var showControls = false
     @State private var hideControlsWorkItem: DispatchWorkItem?
     @State private var timeObserver: Any?
-    @State private var loopEnabled = true
-
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -21,21 +22,23 @@ struct VideoPlayerView: View {
                     VideoPlayerController(player: player)
                         .onAppear {
                             startTimeObserver()
-                            if isActive {
-                                // 跳转记忆位置
-                                if videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
-                                    let saved = videoModel.currentTime
-                                    if saved > 0 && saved < duration {
-                                        player.seek(to: CMTime(seconds: saved, preferredTimescale: 600))
-                                    }
-                                }
+                            // 如果是当前活跃的视频（与全局索引比较），则播放
+                            if videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
                                 player.play()
+                                isPlaying = true
+                                // 跳转到记忆位置
+                                let saved = videoModel.currentTime
+                                if saved > 0 && saved < duration {
+                                    player.seek(to: CMTime(seconds: saved, preferredTimescale: 600))
+                                }
+                            } else {
+                                player.pause()
+                                isPlaying = false
                             }
                         }
                         .onDisappear {
-                            player.pause()
                             removeTimeObserver()
-                            if isActive {
+                            if videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
                                 videoModel.currentTime = currentTime
                                 videoModel.savePosition()
                             }
@@ -46,7 +49,7 @@ struct VideoPlayerView: View {
                             setupPlayer()
                         }
                 }
-
+                
                 // 进度条（单击显示，2秒后隐藏）
                 if showControls {
                     VStack {
@@ -59,6 +62,7 @@ struct VideoPlayerView: View {
                                 }
                             ), in: 0...max(duration, 1))
                             .accentColor(.white)
+                            
                             HStack {
                                 Text(formatTime(currentTime))
                                     .font(.caption)
@@ -78,20 +82,35 @@ struct VideoPlayerView: View {
             }
             .ignoresSafeArea()
             .onTapGesture {
-                toggleControls()
+                // 单击显示/隐藏进度条
+                hideControlsWorkItem?.cancel()
+                withAnimation { showControls = true }
+                let work = DispatchWorkItem {
+                    withAnimation { showControls = false }
+                }
+                hideControlsWorkItem = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
             }
         }
-        .onChange(of: isActive) { newValue in
-            if newValue {
-                player?.play()
+        // 监听全局索引变化，自动播放/暂停
+        .onReceive(videoModel.$currentIndex) { newIndex in
+            let isCurrent = newIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1)
+            if isCurrent {
+                // 当前视频变为活跃，开始播放
+                if let player = player {
+                    player.play()
+                    isPlaying = true
+                }
             } else {
+                // 不再是活跃视频，暂停
                 player?.pause()
+                isPlaying = false
             }
         }
     }
-
+    
     private func setupPlayer() {
-        // 优先使用预加载的 PlayerItem
+        // 从预加载缓存获取，如果没有则新建
         if let preloadedItem = videoModel.preloadItem(for: videoURL) {
             player = AVPlayer(playerItem: preloadedItem)
         } else {
@@ -100,27 +119,20 @@ struct VideoPlayerView: View {
             item.preferredForwardBufferDuration = 5.0
             player = AVPlayer(playerItem: item)
         }
-
         // 循环播放
         NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player?.currentItem,
             queue: .main
         ) { _ in
-            if loopEnabled {
+            // 只有当前视频才重播
+            if videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
                 player?.seek(to: .zero)
-                if isActive {
-                    player?.play()
-                }
+                player?.play()
             }
         }
-
-        // 如果当前激活，立即播放
-        if isActive {
-            player?.play()
-        }
     }
-
+    
     private func startTimeObserver() {
         guard let player = player else { return }
         removeTimeObserver()
@@ -131,28 +143,18 @@ struct VideoPlayerView: View {
             }
         }
     }
-
+    
     private func removeTimeObserver() {
         if let observer = timeObserver, let player = player {
             player.removeTimeObserver(observer)
             timeObserver = nil
         }
     }
-
-    private func toggleControls() {
-        hideControlsWorkItem?.cancel()
-        withAnimation { showControls = true }
-        let work = DispatchWorkItem { withAnimation { showControls = false } }
-        hideControlsWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
-    }
-
+    
     private func formatTime(_ seconds: TimeInterval) -> String {
         if seconds.isNaN || seconds.isInfinite { return "00:00" }
         let total = Int(seconds)
-        let mins = total / 60
-        let secs = total % 60
-        return String(format: "%02d:%02d", mins, secs)
+        return String(format: "%02d:%02d", total / 60, total % 60)
     }
 }
 
