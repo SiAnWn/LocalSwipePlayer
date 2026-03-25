@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 import AVFoundation
-import UIKit  // 添加用于弹窗
+import UIKit  // 用于弹窗
 
 class VideoModel: ObservableObject {
     @Published var videos: [URL] = []
@@ -27,6 +27,7 @@ class VideoModel: ObservableObject {
             let fileNames = allFiles.map { $0.lastPathComponent }
             message += "所有文件: \(fileNames)\n"
             
+            // 不区分大小写匹配扩展名
             let videoFiles = allFiles.filter { url in
                 let ext = url.pathExtension.lowercased()
                 return supportedExtensions.contains(ext)
@@ -70,10 +71,50 @@ class VideoModel: ObservableObject {
         }
     }
     
-    // 其他方法不变...
-    func preloadItem(for url: URL) -> AVPlayerItem? { ... }
-    func cleanupItems(except current: URL) { ... }
-    func savePosition() { ... }
-    func loadSavedPosition() { ... }
-    func deleteVideo(at index: Int) { ... }
+    func preloadItem(for url: URL) -> AVPlayerItem? {
+        if let existing = playerItems[url] { return existing }
+        let asset = AVURLAsset(url: url)
+        let item = AVPlayerItem(asset: asset)
+        item.preferredForwardBufferDuration = 5.0
+        playerItems[url] = item
+        asset.loadValuesAsynchronously(forKeys: ["tracks"]) { }
+        return item
+    }
+    
+    func cleanupItems(except current: URL) {
+        for (url, _) in playerItems where url != current {
+            playerItems[url] = nil
+        }
+    }
+    
+    func savePosition() {
+        UserDefaults.standard.set(currentIndex, forKey: lastIndexKey)
+        UserDefaults.standard.set(currentTime, forKey: lastTimeKey)
+    }
+    
+    func loadSavedPosition() {
+        currentIndex = UserDefaults.standard.integer(forKey: lastIndexKey)
+        currentTime = UserDefaults.standard.double(forKey: lastTimeKey)
+        if currentIndex >= videos.count {
+            currentIndex = 0
+        }
+    }
+    
+    func deleteVideo(at index: Int) {
+        guard index < videos.count else { return }
+        let url = videos[index]
+        do {
+            try FileManager.default.removeItem(at: url)
+            loadVideos()
+            if videos.isEmpty {
+                currentIndex = 0
+            } else if index < videos.count {
+                currentIndex = index
+            } else {
+                currentIndex = videos.count - 1
+            }
+        } catch {
+            print("删除失败: \(error)")
+        }
+    }
 }
