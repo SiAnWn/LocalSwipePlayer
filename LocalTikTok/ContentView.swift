@@ -8,7 +8,9 @@ struct ContentView: View {
     @State private var currentTime: TimeInterval = 0
     @State private var duration: TimeInterval = 0
     @State private var showControls = false
+    @State private var hideControlsWorkItem: DispatchWorkItem?
     @State private var showFileName = false
+    @State private var fileNameWorkItem: DispatchWorkItem?
     @State private var showSpeedMenu = false
     @State private var speed: Float = 1.0
     
@@ -16,93 +18,37 @@ struct ContentView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
                 if videoModel.videos.isEmpty {
-                    EmptyStateView(refreshAction: { videoModel.loadVideos() })
+                    emptyView
                 } else {
-                    ZStack(alignment: .bottomLeading) {
-                        // 播放器滚动视图
-                        VerticalPagingScrollView(
-                            pageCount: videoModel.videos.count,
-                            currentPage: $currentIndex
-                        ) { index in
-                            VideoPlayerView(
-                                url: videoModel.videos[index],
-                                isActive: index == currentIndex
-                            )
-                            .frame(width: geometry.size.width, height: geometry.size.height)
+                    // 竖向分页滚动视图
+                    VerticalPagingScrollView(
+                        pageCount: videoModel.videos.count,
+                        currentPage: $currentIndex,
+                        onPageChanged: { newIndex in
+                            // 当页码改变时（由滚动或随机跳转触发），处理逻辑
+                            if newIndex < videoModel.videos.count {
+                                let newURL = videoModel.videos[newIndex]
+                                VideoPlayerManager.shared.loadVideo(url: newURL, autoPlay: true)
+                            }
                         }
-                        .ignoresSafeArea()
-                        .onTapGesture { toggleControls(); showFileNameBriefly() }
-                        .onTapGesture(count: 2) { captureScreenshot() }
-                        .onLongPressGesture(minimumDuration: 0.5) {
-                            showSpeedMenu.toggle()
-                            autoHideSpeedMenu()
-                        }
-                        .gesture(
-                            DragGesture()
-                                .onEnded { value in
-                                    if value.translation.height < -50 && videoModel.videos.count > 1 {
-                                        var randomIndex = Int.random(in: 0..<videoModel.videos.count)
-                                        while randomIndex == currentIndex {
-                                            randomIndex = Int.random(in: 0..<videoModel.videos.count)
-                                        }
-                                        withAnimation {
-                                            currentIndex = randomIndex
-                                        }
-                                    }
-                                }
+                    ) { index in
+                        VideoPlayerView(
+                            url: videoModel.videos[index],
+                            isActive: index == currentIndex
                         )
-                        
-                        // 控制栏（进度条+时间）
-                        if showControls {
-                            ControlBarView(
-                                currentTime: $currentTime,
-                                duration: duration,
-                                onSeek: { VideoPlayerManager.shared.seek(to: $0) }
-                            )
-                        }
-                        
-                        // 文件名浮层
-                        if showFileName {
-                            FileNameOverlayView(fileName: videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
-                        }
-                        
-                        // 倍速菜单
-                        if showSpeedMenu {
-                            SpeedMenuView(
-                                speed: $speed,
-                                onSpeedSelected: {
-                                    VideoPlayerManager.shared.setRate(speed)
-                                    showSpeedMenu = false
-                                }
-                            )
-                        }
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                     }
+                    .ignoresSafeArea()
+                    
+                    // 叠加控制栏
+                    controlsOverlay
                 }
                 
-                // 右上角刷新按钮
-                RefreshButton(action: { videoModel.loadVideos() })
+                // 刷新按钮
+                refreshButton
                 
-                // 左下角删除按钮
-                if !videoModel.videos.isEmpty {
-                    DeleteButton {
-                        showDeleteConfirm = true
-                    }
-                    .alert(isPresented: $showDeleteConfirm) {
-                        Alert(
-                            title: Text("删除视频"),
-                            message: Text("确定要删除当前视频吗？"),
-                            primaryButton: .destructive(Text("删除")) {
-                                videoModel.deleteVideo(at: currentIndex)
-                                if videoModel.videos.isEmpty {
-                                    currentIndex = 0
-                                } else if currentIndex >= videoModel.videos.count {
-                                    currentIndex = videoModel.videos.count - 1
-                                }
-                            },
-                            secondaryButton: .cancel()
-                        )
-                    }
-                }
+                // 删除按钮
+                deleteButton
             }
             .onAppear {
                 videoModel.loadVideos()
@@ -115,28 +61,171 @@ struct ContentView: View {
                     VideoPlayerManager.shared.loadVideo(url: firstURL, autoPlay: true)
                 }
             }
+            .onTapGesture(count: 2) { captureScreenshot() }
+            .onLongPressGesture(minimumDuration: 0.5) {
+                showSpeedMenu.toggle()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    withAnimation { showSpeedMenu = false }
+                }
+            }
+            .onTapGesture {
+                toggleControls()
+                showFileNameBriefly()
+            }
         }
     }
     
-    // MARK: - 辅助方法
-    private func toggleControls() {
-        withAnimation { showControls = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation { showControls = false }
+    // MARK: - 子视图
+    private var emptyView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "video.slash")
+                .font(.largeTitle)
+            Text("请将视频文件放入应用 Documents 目录")
+                .multilineTextAlignment(.center)
+            Button("刷新") {
+                videoModel.loadVideos()
+            }
+            .padding()
+            .background(Color.blue)
+            .cornerRadius(8)
         }
+    }
+    
+    @ViewBuilder
+    private var controlsOverlay: some View {
+        // 进度条
+        if showControls {
+            progressBarView
+        }
+        // 文件名浮层
+        if showFileName {
+            fileNameView
+        }
+        // 倍速菜单
+        if showSpeedMenu {
+            speedMenuView
+        }
+    }
+    
+    private var progressBarView: some View {
+        VStack {
+            Spacer()
+            VStack(spacing: 8) {
+                Slider(value: Binding(
+                    get: { currentTime },
+                    set: { VideoPlayerManager.shared.seek(to: $0) }
+                ), in: 0...max(duration, 1))
+                .accentColor(.white)
+                .padding(.horizontal, 20)
+                
+                HStack {
+                    Text(formatTime(currentTime)).font(.caption).foregroundColor(.white)
+                    Spacer()
+                    Text(formatTime(duration)).font(.caption).foregroundColor(.white)
+                }
+                .padding(.horizontal, 20)
+            }
+            .padding(.bottom, 30)
+            .background(Color.black.opacity(0.5))
+        }
+        .transition(.opacity)
+    }
+    
+    private var fileNameView: some View {
+        VStack {
+            Text(videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
+                .font(.caption)
+                .padding(8)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(8)
+                .foregroundColor(.white)
+                .padding(.top, 50)
+            Spacer()
+        }
+        .transition(.opacity)
+    }
+    
+    private var speedMenuView: some View {
+        VStack(spacing: 12) {
+            ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { sp in
+                Button(action: {
+                    speed = sp
+                    VideoPlayerManager.shared.setRate(speed)
+                    showSpeedMenu = false
+                }) {
+                    Text("\(sp)x")
+                        .foregroundColor(.white)
+                        .padding(.vertical, 8)
+                        .frame(width: 80)
+                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
+                        .cornerRadius(8)
+                }
+            }
+        }
+        .padding()
+        .background(Color.black.opacity(0.8))
+        .cornerRadius(12)
+        .transition(.scale)
+    }
+    
+    private var refreshButton: some View {
+        Button(action: { videoModel.loadVideos() }) {
+            Image(systemName: "arrow.clockwise")
+                .padding(12)
+                .background(Color.black.opacity(0.6))
+                .clipShape(Circle())
+                .foregroundColor(.white)
+        }
+        .padding()
+    }
+    
+    private var deleteButton: some View {
+        Group {
+            if !videoModel.videos.isEmpty {
+                Button(action: { showDeleteConfirm = true }) {
+                    Image(systemName: "trash")
+                        .padding(12)
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Circle())
+                        .foregroundColor(.white)
+                }
+                .padding(.leading, 20)
+                .padding(.bottom, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .alert(isPresented: $showDeleteConfirm) {
+                    Alert(
+                        title: Text("删除视频"),
+                        message: Text("确定要删除当前视频吗？"),
+                        primaryButton: .destructive(Text("删除")) {
+                            videoModel.deleteVideo(at: currentIndex)
+                            if videoModel.videos.isEmpty {
+                                currentIndex = 0
+                            } else if currentIndex >= videoModel.videos.count {
+                                currentIndex = videoModel.videos.count - 1
+                            }
+                        },
+                        secondaryButton: .cancel()
+                    )
+                }
+            }
+        }
+    }
+    
+    // MARK: - 辅助功能
+    private func toggleControls() {
+        hideControlsWorkItem?.cancel()
+        withAnimation { showControls = true }
+        let work = DispatchWorkItem { withAnimation { showControls = false } }
+        hideControlsWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
     }
     
     private func showFileNameBriefly() {
+        fileNameWorkItem?.cancel()
         withAnimation { showFileName = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation { showFileName = false }
-        }
-    }
-    
-    private func autoHideSpeedMenu() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation { showSpeedMenu = false }
-        }
+        let work = DispatchWorkItem { withAnimation { showFileName = false } }
+        fileNameWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
     }
     
     private func captureScreenshot() {
@@ -163,87 +252,6 @@ struct ContentView: View {
             print("截图失败: \(error)")
         }
     }
-}
-
-// MARK: - 子视图组件
-struct EmptyStateView: View {
-    let refreshAction: () -> Void
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "video.slash")
-                .font(.largeTitle)
-            Text("请将视频文件放入应用 Documents 目录")
-                .multilineTextAlignment(.center)
-            Button("刷新", action: refreshAction)
-                .padding()
-                .background(Color.blue)
-                .cornerRadius(8)
-        }
-    }
-}
-
-struct RefreshButton: View {
-    let action: () -> Void
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "arrow.clockwise")
-                .padding(12)
-                .background(Color.black.opacity(0.6))
-                .clipShape(Circle())
-                .foregroundColor(.white)
-        }
-        .padding()
-    }
-}
-
-struct DeleteButton: View {
-    let action: () -> Void
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "trash")
-                .padding(12)
-                .background(Color.black.opacity(0.6))
-                .clipShape(Circle())
-                .foregroundColor(.white)
-        }
-        .padding(.leading, 20)
-        .padding(.bottom, 20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-    }
-}
-
-struct ControlBarView: View {
-    @Binding var currentTime: TimeInterval
-    let duration: TimeInterval
-    let onSeek: (TimeInterval) -> Void
-    
-    var body: some View {
-        VStack {
-            Spacer()
-            VStack(spacing: 8) {
-                Slider(value: Binding(
-                    get: { currentTime },
-                    set: { onSeek($0) }
-                ), in: 0...max(duration, 1))
-                .accentColor(.white)
-                .padding(.horizontal, 20)
-                
-                HStack {
-                    Text(formatTime(currentTime))
-                        .font(.caption)
-                        .foregroundColor(.white)
-                    Spacer()
-                    Text(formatTime(duration))
-                        .font(.caption)
-                        .foregroundColor(.white)
-                }
-                .padding(.horizontal, 20)
-            }
-            .padding(.bottom, 30)
-            .background(Color.black.opacity(0.5))
-        }
-        .transition(.opacity)
-    }
     
     private func formatTime(_ seconds: TimeInterval) -> String {
         if seconds.isNaN || seconds.isInfinite { return "00:00" }
@@ -252,57 +260,13 @@ struct ControlBarView: View {
     }
 }
 
-struct FileNameOverlayView: View {
-    let fileName: String
-    var body: some View {
-        VStack {
-            Text(fileName)
-                .font(.caption)
-                .padding(8)
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(8)
-                .foregroundColor(.white)
-                .padding(.top, 50)
-            Spacer()
-        }
-        .transition(.opacity)
-    }
-}
-
-struct SpeedMenuView: View {
-    @Binding var speed: Float
-    let onSpeedSelected: () -> Void
-    let speeds: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            ForEach(speeds, id: \.self) { sp in
-                Button(action: {
-                    speed = sp
-                    onSpeedSelected()
-                }) {
-                    Text("\(sp)x")
-                        .foregroundColor(.white)
-                        .padding(.vertical, 8)
-                        .frame(width: 80)
-                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
-                        .cornerRadius(8)
-                }
-            }
-        }
-        .padding()
-        .background(Color.black.opacity(0.8))
-        .cornerRadius(12)
-        .transition(.scale)
-    }
-}
-
-// MARK: - 竖向分页滚动视图
+// MARK: - 竖向分页滚动视图（兼容 iOS 15，支持向上滑动随机跳转）
 struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
     let pageCount: Int
     @Binding var currentPage: Int
+    let onPageChanged: (Int) -> Void
     let content: (Int) -> Content
-
+    
     func makeUIView(context: Context) -> UIScrollView {
         let scrollView = UIScrollView()
         scrollView.isPagingEnabled = true
@@ -310,11 +274,11 @@ struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.bounces = true
         scrollView.delegate = context.coordinator
-
+        
         let containerView = UIHostingController(rootView: makeContentViews()).view!
         containerView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.addSubview(containerView)
-
+        
         NSLayoutConstraint.activate([
             containerView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
             containerView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
@@ -323,47 +287,87 @@ struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
             containerView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
             containerView.heightAnchor.constraint(equalToConstant: CGFloat(pageCount) * UIScreen.main.bounds.height)
         ])
-
+        
         return scrollView
     }
-
+    
     func updateUIView(_ uiView: UIScrollView, context: Context) {
         let offsetY = CGFloat(currentPage) * uiView.bounds.height
         if uiView.contentOffset.y != offsetY {
-            uiView.setContentOffset(CGPoint(x: 0, y: offsetY), animated: true)
+            uiView.setContentOffset(CGPoint(x: 0, y: offsetY), animated: false)
         }
         if let containerView = uiView.subviews.first {
             containerView.frame.size.height = CGFloat(pageCount) * uiView.bounds.height
         }
     }
-
+    
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
-
+    
     private func makeContentViews() -> some View {
         ForEach(0..<pageCount, id: \.self) { index in
             content(index)
                 .frame(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.height)
         }
     }
-
+    
     class Coordinator: NSObject, UIScrollViewDelegate {
         var parent: VerticalPagingScrollView
+        private var lastPage: Int = 0
+        private var isChangingPage = false
+        
         init(_ parent: VerticalPagingScrollView) {
             self.parent = parent
         }
+        
+        func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+            lastPage = parent.currentPage
+        }
+        
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-            let page = Int(scrollView.contentOffset.y / scrollView.bounds.height)
-            if page != parent.currentPage {
-                parent.currentPage = page
+            guard !isChangingPage else { return }
+            let newPage = Int(scrollView.contentOffset.y / scrollView.bounds.height)
+            // 向上滑动：newPage < lastPage
+            if newPage < lastPage && parent.pageCount > 1 {
+                // 随机选择一个不等于新页的页码
+                var randomPage = Int.random(in: 0..<parent.pageCount)
+                while randomPage == newPage {
+                    randomPage = Int.random(in: 0..<parent.pageCount)
+                }
+                isChangingPage = true
+                DispatchQueue.main.async {
+                    self.parent.currentPage = randomPage
+                    self.parent.onPageChanged(randomPage)
+                    self.isChangingPage = false
+                }
+            } else {
+                if newPage != parent.currentPage {
+                    parent.currentPage = newPage
+                    parent.onPageChanged(newPage)
+                }
             }
         }
+        
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
             if !decelerate {
-                let page = Int(scrollView.contentOffset.y / scrollView.bounds.height)
-                if page != parent.currentPage {
-                    parent.currentPage = page
+                let newPage = Int(scrollView.contentOffset.y / scrollView.bounds.height)
+                if newPage < lastPage && parent.pageCount > 1 {
+                    var randomPage = Int.random(in: 0..<parent.pageCount)
+                    while randomPage == newPage {
+                        randomPage = Int.random(in: 0..<parent.pageCount)
+                    }
+                    isChangingPage = true
+                    DispatchQueue.main.async {
+                        self.parent.currentPage = randomPage
+                        self.parent.onPageChanged(randomPage)
+                        self.isChangingPage = false
+                    }
+                } else {
+                    if newPage != parent.currentPage {
+                        parent.currentPage = newPage
+                        parent.onPageChanged(newPage)
+                    }
                 }
             }
         }
