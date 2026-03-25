@@ -5,7 +5,7 @@ import AVKit
 struct VideoPagerView: UIViewControllerRepresentable {
     let videoURLs: [URL]
     @Binding var currentIndex: Int
-    let videoModel: VideoModel  // 新增，用于预加载
+    let videoModel: VideoModel
 
     func makeUIViewController(context: Context) -> UIPageViewController {
         let pageVC = UIPageViewController(
@@ -24,6 +24,7 @@ struct VideoPagerView: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ pageVC: UIPageViewController, context: Context) {
+        // 当外部 currentIndex 改变时（如删除视频或外部直接设置），同步滚动
         if let currentVC = pageVC.viewControllers?.first as? VideoPageViewController,
            currentVC.videoURL != videoURLs[currentIndex] {
             let newVC = VideoPageViewController(videoURL: videoURLs[currentIndex], videoModel: videoModel)
@@ -75,39 +76,39 @@ struct VideoPagerView: UIViewControllerRepresentable {
                   let currentVC = pageViewController.viewControllers?.first as? VideoPageViewController,
                   let newIndex = parent.videoURLs.firstIndex(of: currentVC.videoURL) else { return }
             
+            // 避免递归
             guard !isRandomJumping else { return }
             
-            // 判断向上滑动
+            // 判断向上滑动（新索引 < 旧索引）
             if newIndex < lastIndex && parent.videoURLs.count > 1 {
-                // 随机选择一个不等于 newIndex 的索引
+                // 随机选择一个不等于新索引的索引
                 var randomIndex = Int.random(in: 0..<parent.videoURLs.count)
                 while randomIndex == newIndex {
                     randomIndex = Int.random(in: 0..<parent.videoURLs.count)
                 }
                 isRandomJumping = true
-                // 直接在当前视图控制器上替换视频，使用预加载的 item
+                // 直接在当前视图控制器上替换视频，不替换视图控制器本身，无闪烁
                 let randomURL = parent.videoURLs[randomIndex]
-                currentVC.replaceVideo(with: randomURL, using: parent.videoModel)
-                // 更新外部索引
+                currentVC.replaceVideo(with: randomURL)
                 parent.currentIndex = randomIndex
-                // 重置 lastIndex 为随机后的索引
-                lastIndex = randomIndex
                 isRandomJumping = false
             } else {
+                // 向下滑动或未变，正常更新 currentIndex
                 parent.currentIndex = newIndex
-                lastIndex = newIndex
             }
+            lastIndex = parent.currentIndex
         }
     }
 }
 
-// MARK: - 视频页面视图控制器（支持预加载和动态更换视频）
+// MARK: - 视频页面视图控制器（支持动态更换视频，消除闪烁）
 class VideoPageViewController: UIViewController {
     private(set) var videoURL: URL
+    private let videoModel: VideoModel
     private var playerViewController: AVPlayerViewController?
     private var player: AVPlayer?
+    private var timeObserver: Any?
     private var isPlaying = false
-    private let videoModel: VideoModel
     
     init(videoURL: URL, videoModel: VideoModel) {
         self.videoURL = videoURL
@@ -134,11 +135,16 @@ class VideoPageViewController: UIViewController {
         super.viewWillDisappear(animated)
         player?.pause()
         isPlaying = false
+        // 保存当前进度
+        if let currentTime = player?.currentTime().seconds {
+            videoModel.currentTime = currentTime
+            videoModel.savePosition()
+        }
     }
     
     private func setupPlayer() {
-        // 使用预加载的 item（如果有）
-        let playerItem = videoModel.preloadItem(for: videoURL) ?? AVPlayerItem(asset: AVURLAsset(url: videoURL))
+        let asset = AVURLAsset(url: videoURL)
+        let playerItem = AVPlayerItem(asset: asset)
         playerItem.preferredForwardBufferDuration = 5.0
         player = AVPlayer(playerItem: playerItem)
         
@@ -154,6 +160,7 @@ class VideoPageViewController: UIViewController {
         playerVC.didMove(toParent: self)
         self.playerViewController = playerVC
         
+        // 监听播放结束，自动循环
         NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player?.currentItem,
@@ -162,10 +169,18 @@ class VideoPageViewController: UIViewController {
             self?.player?.seek(to: .zero)
             self?.player?.play()
         }
+        
+        // 添加时间观察者，保存进度（可选）
+        timeObserver = player?.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] time in
+            if self?.isPlaying == true {
+                self?.videoModel.currentTime = time.seconds
+                self?.videoModel.savePosition()
+            }
+        }
     }
     
-    // 动态更换视频，使用预加载的 item 减少黑屏
-    func replaceVideo(with newURL: URL, using videoModel: VideoModel) {
+    // 动态更换视频，不重建视图控制器，避免闪烁
+    func replaceVideo(with newURL: URL) {
         guard videoURL != newURL else { return }
         videoURL = newURL
         
@@ -174,9 +189,12 @@ class VideoPageViewController: UIViewController {
             NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: currentItem)
         }
         
-        // 获取预加载的 item
-        let playerItem = videoModel.preloadItem(for: newURL) ?? AVPlayerItem(asset: AVURLAsset(url: newURL))
+        // 创建新的播放项
+        let asset = AVURLAsset(url: newURL)
+        let playerItem = AVPlayerItem(asset: asset)
         playerItem.preferredForwardBufferDuration = 5.0
+        
+        // 替换播放器的当前项
         player?.replaceCurrentItem(with: playerItem)
         
         // 重新添加循环播放观察者
@@ -193,13 +211,20 @@ class VideoPageViewController: UIViewController {
         if isPlaying {
             player?.play()
         }
+        
+        // 跳转到记忆位置（如果有）
+        if videoModel.currentIndex == videoModel.videos.firstIndex(of: newURL) {
+            let savedTime = videoModel.currentTime
+            if savedTime > 0 && savedTime < (player?.currentItem?.duration.seconds ?? 0) {
+                player?.seek(to: CMTime(seconds: savedTime, preferredTimescale: 600))
+            }
+        }
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
-        if let player = player {
-            player.pause()
-            player.replaceCurrentItem(with: nil)
+        if let observer = timeObserver, let player = player {
+            player.removeTimeObserver(observer)
         }
     }
 }
