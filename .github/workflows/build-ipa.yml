@@ -1,10 +1,61 @@
-- name: Build IPA (unsigned)
-  run: |
-    # 指定派生数据目录为 ./build
-    xcodebuild -project LocalTikTok.xcodeproj -scheme LocalTikTok -sdk iphoneos -configuration Release build \
-      CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
-      -derivedDataPath ./build
-    # 构建产物现在在 ./build/Build/Products/Release-iphoneos/LocalTikTok.app
-    mkdir Payload
-    cp -r ./build/Build/Products/Release-iphoneos/LocalTikTok.app Payload/
-    zip -r LocalTikTok.ipa Payload
+name: Build IPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: |
+          cat > project.yml <<EOF
+          name: LocalTikTok
+          options:
+            bundleIdPrefix: com.yourname
+          targets:
+            LocalTikTok:
+              type: application
+              platform: iOS
+              deploymentTarget: "15.0"
+              sources: [LocalTikTok]
+              info:
+                path: LocalTikTok/Info.plist
+                properties:
+                  CFBundleIdentifier: com.yourname.localtiktok
+                  CFBundleName: LocalTikTok
+                  CFBundleDisplayName: LocalTikTok
+                  UILaunchStoryboardName: LaunchScreen
+                  UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+                  UIFileSharingEnabled: true
+                  LSSupportsOpeningDocumentsInPlace: true
+              settings:
+                base:
+                  SWIFT_VERSION: 5.0
+                  PRODUCT_BUNDLE_IDENTIFIER: com.yourname.localtiktok
+          EOF
+          xcodegen generate
+
+      - name: Build IPA (unsigned)
+        run: |
+          xcodebuild -project LocalTikTok.xcodeproj -scheme LocalTikTok -sdk iphoneos -configuration Release build \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath ./build
+          mkdir Payload
+          cp -r ./build/Build/Products/Release-iphoneos/LocalTikTok.app Payload/
+          zip -r LocalTikTok.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: LocalTikTok-unsigned
+          path: LocalTikTok.ipa
