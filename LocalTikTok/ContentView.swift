@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 struct ContentView: View {
     @EnvironmentObject var videoModel: VideoModel
@@ -12,7 +13,6 @@ struct ContentView: View {
     @State private var fileNameWorkItem: DispatchWorkItem?
     @State private var showSpeedMenu = false
     @State private var speed: Float = 1.0
-    @State private var lastDragPage: Int = 0 // 用于判断向上滑动
     
     var body: some View {
         GeometryReader { geometry in
@@ -31,21 +31,20 @@ struct ContentView: View {
                         .cornerRadius(8)
                     }
                 } else {
+                    // 竖向分页滚动视图（兼容 iOS 15）
                     VerticalPagingScrollView(
                         pageCount: videoModel.videos.count,
                         currentPage: $currentIndex
                     ) { index in
-                        let url = videoModel.videos[index]
-                        let fileName = url.lastPathComponent
-                        
                         VideoPlayerView(
-                            url: url,
+                            url: videoModel.videos[index],
                             currentTime: $currentTime,
                             duration: $duration,
                             isActive: index == currentIndex
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .onAppear {
+                            let url = videoModel.videos[index]
                             // 预加载当前及相邻视频
                             _ = videoModel.preloadItem(for: url)
                             if index > 0 {
@@ -60,23 +59,11 @@ struct ContentView: View {
                         }
                     }
                     .ignoresSafeArea()
-                    .onChange(of: currentIndex) { newIndex in
-                        // 当滚动结束时，切换到新视频
-                        if newIndex < videoModel.videos.count {
-                            let newURL = videoModel.videos[newIndex]
-                            VideoPlayerManager.shared.loadVideo(url: newURL, autoPlay: true)
-                        }
-                    }
                     .gesture(
                         DragGesture()
-                            .onChanged { _ in
-                                // 在拖动开始时记录当前页码
-                                lastDragPage = currentIndex
-                            }
                             .onEnded { value in
-                                // 判断向上滑动（滑动距离大于阈值且垂直位移为负）
+                                // 向上滑动随机跳转
                                 if value.translation.height < -50 {
-                                    // 向上滑动：随机跳转
                                     guard videoModel.videos.count > 1 else { return }
                                     var randomIndex = Int.random(in: 0..<videoModel.videos.count)
                                     while randomIndex == currentIndex {
@@ -89,7 +76,7 @@ struct ContentView: View {
                             }
                     )
                     
-                    // 控制栏（进度条、时间）
+                    // 控制栏（进度条 + 时间）
                     if showControls {
                         VStack {
                             Spacer()
@@ -258,7 +245,6 @@ struct ContentView: View {
             let cgImage = try generator.copyCGImage(at: CMTime(seconds: time, preferredTimescale: 600), actualTime: nil)
             let image = UIImage(cgImage: cgImage)
             UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-            // 简单提示
             let alert = UIAlertController(title: nil, message: "截图已保存", preferredStyle: .alert)
             if let rootVC = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene })
@@ -334,18 +320,15 @@ struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
 
     class Coordinator: NSObject, UIScrollViewDelegate {
         var parent: VerticalPagingScrollView
-
         init(_ parent: VerticalPagingScrollView) {
             self.parent = parent
         }
-
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
             let page = Int(scrollView.contentOffset.y / scrollView.bounds.height)
             if page != parent.currentPage {
                 parent.currentPage = page
             }
         }
-
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
             if !decelerate {
                 let page = Int(scrollView.contentOffset.y / scrollView.bounds.height)
