@@ -19,28 +19,17 @@ class VideoModel: ObservableObject {
     
     func loadVideos() {
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        // 调试输出（仅开发时可见，不影响构建）
-        print("Documents 路径: \(documentsPath.path)")
-        
         do {
             let allFiles = try FileManager.default.contentsOfDirectory(at: documentsPath, includingPropertiesForKeys: nil)
-            print("所有文件: \(allFiles.map { $0.lastPathComponent })")
-            
-            // 不区分大小写匹配扩展名
-            let videoFiles = allFiles.filter { url in
-                let ext = url.pathExtension.lowercased()
-                return supportedExtensions.contains(ext)
-            }
+            let videoFiles = allFiles.filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
             DispatchQueue.main.async {
                 self.videos = videoFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }
                 self.playerItems.removeAll()
                 if self.currentIndex >= self.videos.count {
                     self.currentIndex = max(0, self.videos.count - 1)
                 }
-                print("找到视频: \(self.videos.map { $0.lastPathComponent })")
             }
         } catch {
-            print("读取目录失败: \(error)")
             DispatchQueue.main.async { self.videos = [] }
         }
     }
