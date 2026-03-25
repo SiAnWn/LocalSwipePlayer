@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var videoModel = VideoModel()
+    @EnvironmentObject var videoModel: VideoModel
     @State private var currentIndex: Int = 0
     @State private var showDeleteConfirm = false
     
@@ -20,22 +20,16 @@ struct ContentView: View {
                     .background(Color.blue)
                     .cornerRadius(8)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                VideoPageViewController(videos: videoModel.videos, currentIndex: $currentIndex)
-                    .ignoresSafeArea()
-                    .onAppear {
-                        // 初始化第一个视频
-                        if let firstURL = videoModel.videos.first {
-                            VideoPlayerManager.shared.loadVideo(url: firstURL, autoPlay: true)
-                        }
-                    }
+                VideoPageViewControllerWrapper(
+                    videoModel: videoModel,
+                    currentIndex: $currentIndex
+                )
+                .ignoresSafeArea()
             }
             
             // 刷新按钮
-            Button(action: {
-                videoModel.loadVideos()
-            }) {
+            Button(action: { videoModel.loadVideos() }) {
                 Image(systemName: "arrow.clockwise")
                     .padding(12)
                     .background(Color.black.opacity(0.6))
@@ -67,10 +61,6 @@ struct ContentView: View {
                             } else if currentIndex >= videoModel.videos.count {
                                 currentIndex = videoModel.videos.count - 1
                             }
-                            // 重新加载当前视频
-                            if !videoModel.videos.isEmpty {
-                                VideoPlayerManager.shared.loadVideo(url: videoModel.videos[currentIndex], autoPlay: true)
-                            }
                         },
                         secondaryButton: .cancel()
                     )
@@ -85,5 +75,28 @@ struct ContentView: View {
                 currentIndex = 0
             }
         }
+    }
+}
+
+// 桥接 UIPageViewController 到 SwiftUI
+struct VideoPageViewControllerWrapper: UIViewControllerRepresentable {
+    let videoModel: VideoModel
+    @Binding var currentIndex: Int
+    
+    func makeUIViewController(context: Context) -> VideoPageViewController {
+        let vc = VideoPageViewController(videoModel: videoModel) { newIndex in
+            DispatchQueue.main.async {
+                currentIndex = newIndex
+                videoModel.currentIndex = newIndex
+                videoModel.savePosition()
+                // 随机播放：向上滑动时随机跳转
+                // 这里需要判断方向，但 PageViewController 没有提供方向信息，所以我们可以在 VideoPageViewController 中实现随机逻辑
+            }
+        }
+        return vc
+    }
+    
+    func updateUIViewController(_ uiViewController: VideoPageViewController, context: Context) {
+        // 不需要更新
     }
 }
