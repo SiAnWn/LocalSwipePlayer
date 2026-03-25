@@ -1,10 +1,12 @@
 import UIKit
-import SwiftUI
+import AVFoundation
+import MediaPlayer
 
 class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
     private var viewControllersCache: [UIViewController] = []
     private let videoModel: VideoModel
     private let onPageChanged: (Int) -> Void
+    private var isRandomJumping = false
     
     init(videoModel: VideoModel, onPageChanged: @escaping (Int) -> Void) {
         self.videoModel = videoModel
@@ -21,7 +23,7 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
     override func viewDidLoad() {
         super.viewDidLoad()
         setupViewControllersCache()
-        if let firstVC = viewController(at: videoModel.currentIndex) {
+        if let firstVC = getViewController(at: videoModel.currentIndex) {
             setViewControllers([firstVC], direction: .forward, animated: false, completion: nil)
         }
     }
@@ -35,7 +37,7 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
         }
     }
     
-    func viewController(at index: Int) -> UIViewController? {
+    func getViewController(at index: Int) -> UIViewController? {
         guard index >= 0 && index < viewControllersCache.count else { return nil }
         return viewControllersCache[index]
     }
@@ -46,7 +48,7 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
               let currentIndex = videoModel.videos.firstIndex(of: currentVC.videoURL) else { return nil }
         let previousIndex = currentIndex - 1
         guard previousIndex >= 0 else { return nil }
-        return viewController(at: previousIndex)
+        return getViewController(at: previousIndex)
     }
     
     func pageViewController(_ pageViewController: UIPageViewController, viewControllerAfter viewController: UIViewController) -> UIViewController? {
@@ -54,7 +56,7 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
               let currentIndex = videoModel.videos.firstIndex(of: currentVC.videoURL) else { return nil }
         let nextIndex = currentIndex + 1
         guard nextIndex < videoModel.videos.count else { return nil }
-        return viewController(at: nextIndex)
+        return getViewController(at: nextIndex)
     }
     
     // MARK: - UIPageViewControllerDelegate
@@ -67,7 +69,7 @@ class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSou
     }
 }
 
-// 每个页面的容器视图控制器，用于显示播放器层并添加手势等 UI
+// 每个页面的容器视图控制器
 class VideoPlayerContainerViewController: UIViewController {
     var videoURL: URL!
     weak var videoModel: VideoModel!
@@ -85,9 +87,9 @@ class VideoPlayerContainerViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-        setupPlayerLayer()
         setupUI()
         setupGestures()
+        setupPlayerLayer()
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -102,6 +104,8 @@ class VideoPlayerContainerViewController: UIViewController {
                 VideoPlayerManager.shared.play()
             }
         }
+        // 同步进度条和标签
+        updateUI()
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -110,17 +114,23 @@ class VideoPlayerContainerViewController: UIViewController {
         VideoPlayerManager.shared.pause()
     }
     
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        playerLayer?.frame = view.bounds
+    }
+    
     private func setupPlayerLayer() {
-        playerLayer = VideoPlayerManager.shared.getPlayerLayer()
+        // 注意：不能每次都创建新的 layer，应该获取共享的 player 的 layer
+        if let existingLayer = VideoPlayerManager.shared.player?.currentItem?.asset as? AVURLAsset, existingLayer.url == videoURL {
+            // 如果已存在且匹配，则复用
+            playerLayer = VideoPlayerManager.shared.player?.layer as? AVPlayerLayer
+        } else {
+            playerLayer = VideoPlayerManager.shared.getPlayerLayer()
+        }
         playerLayer?.frame = view.bounds
         if let layer = playerLayer {
             view.layer.insertSublayer(layer, at: 0)
         }
-    }
-    
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        playerLayer?.frame = view.bounds
     }
     
     private func setupUI() {
@@ -185,12 +195,10 @@ class VideoPlayerContainerViewController: UIViewController {
             timeStack.topAnchor.constraint(equalTo: progressSlider!.bottomAnchor, constant: 8)
         ])
         
-        // 更新 UI 的定时器
+        // 定时更新 UI
         Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self, self.isActive else { return }
-            self.progressSlider?.value = Float(VideoPlayerManager.shared.currentTime)
-            self.durationLabel?.text = self.formatTime(VideoPlayerManager.shared.duration)
-            self.currentTimeLabel?.text = self.formatTime(VideoPlayerManager.shared.currentTime)
+            self.updateUI()
         }
         
         progressSlider?.addTarget(self, action: #selector(sliderChanged), for: .valueChanged)
@@ -199,6 +207,16 @@ class VideoPlayerContainerViewController: UIViewController {
     @objc private func sliderChanged() {
         let newTime = TimeInterval(progressSlider?.value ?? 0)
         VideoPlayerManager.shared.seek(to: newTime)
+    }
+    
+    private func updateUI() {
+        progressSlider?.value = Float(VideoPlayerManager.shared.currentTime)
+        currentTimeLabel?.text = formatTime(VideoPlayerManager.shared.currentTime)
+        durationLabel?.text = formatTime(VideoPlayerManager.shared.duration)
+        // 如果 duration 变化，更新 slider 的最大值
+        if progressSlider?.maximumValue != Float(VideoPlayerManager.shared.duration) {
+            progressSlider?.maximumValue = Float(VideoPlayerManager.shared.duration)
+        }
     }
     
     private func setupGestures() {
@@ -238,24 +256,29 @@ class VideoPlayerContainerViewController: UIViewController {
         
         if gesture.state == .began {
             if isLeft {
-                UIScreen.main.brightness = UIScreen.main.brightness
+                startBrightness = UIScreen.main.brightness
             } else {
-                // 音量
+                let volumeView = MPVolumeView()
+                if let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider {
+                    startVolume = slider.value
+                }
             }
         } else if gesture.state == .changed {
             if isLeft {
-                let newBrightness = UIScreen.main.brightness - deltaY
+                let newBrightness = startBrightness - deltaY
                 UIScreen.main.brightness = min(max(newBrightness, 0), 1)
             } else {
                 let volumeView = MPVolumeView()
                 if let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider {
-                    let newVolume = slider.value - Float(deltaY)
+                    let newVolume = startVolume - Float(deltaY)
                     slider.value = min(max(newVolume, 0), 1)
                 }
             }
         }
         gesture.setTranslation(.zero, in: view)
     }
+    private var startBrightness: CGFloat = 0
+    private var startVolume: Float = 0
     
     private func showFileNameTemporarily() {
         UIView.animate(withDuration: 0.2) {
