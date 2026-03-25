@@ -1,16 +1,16 @@
 import AVFoundation
 import UIKit
+import Combine
 
 class VideoPlayerManager: ObservableObject {
     static let shared = VideoPlayerManager()
     private var player: AVPlayer?
-    private var playerLayer: AVPlayerLayer?
-    private var currentURL: URL?
     private var timeObserver: Any?
-    
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
     @Published var isPlaying: Bool = false
+    @Published var rate: Float = 1.0
+    @Published var currentURL: URL?
     
     private init() {
         setupPlayer()
@@ -18,7 +18,7 @@ class VideoPlayerManager: ObservableObject {
     
     private func setupPlayer() {
         player = AVPlayer()
-        player?.rate = 1.0
+        player?.rate = rate
         addTimeObserver()
         
         NotificationCenter.default.addObserver(
@@ -26,8 +26,9 @@ class VideoPlayerManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.seek(to: 0)
-            self?.play()
+            guard let self = self, let url = self.currentURL else { return }
+            self.seek(to: 0)
+            self.play()
         }
     }
     
@@ -77,16 +78,15 @@ class VideoPlayerManager: ObservableObject {
         player?.seek(to: CMTime(seconds: time, preferredTimescale: 600))
     }
     
-    func setRate(_ rate: Float) {
+    func setRate(_ newRate: Float) {
+        rate = newRate
         player?.rate = rate
     }
     
-    // 获取 player layer，用于添加到视图上
     func getPlayerLayer() -> AVPlayerLayer? {
-        if playerLayer == nil {
-            playerLayer = AVPlayerLayer(player: player)
-            playerLayer?.videoGravity = .resizeAspectFill
-        }
-        return playerLayer
+        guard let player = player else { return nil }
+        let layer = AVPlayerLayer(player: player)
+        layer.videoGravity = .resizeAspectFill
+        return layer
     }
 }
