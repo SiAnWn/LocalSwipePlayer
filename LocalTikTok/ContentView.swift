@@ -39,7 +39,7 @@ struct ContentView: View {
                     }
                     .ignoresSafeArea()
                     
-                    // 控制栏（进度条）
+                    // 控制栏
                     if showControls {
                         ProgressBarView(currentTime: $currentTime, duration: duration)
                     }
@@ -185,12 +185,6 @@ struct ContentView: View {
         } catch {
             print("截图失败: \(error)")
         }
-    }
-    
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        if seconds.isNaN || seconds.isInfinite { return "00:00" }
-        let total = Int(seconds)
-        return String(format: "%02d:%02d", total / 60, total % 60)
     }
 }
 
