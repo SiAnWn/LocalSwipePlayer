@@ -2,8 +2,9 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var videoModel = VideoModel()
-    @State private var currentIndex = 0
-
+    @State private var currentIndex: Int = 0
+    @State private var showDeleteConfirm = false
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
@@ -22,18 +23,33 @@ struct ContentView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    // 使用 UIKit 的 UIScrollView 实现竖向分页（兼容 iOS 15）
                     VerticalPagingScrollView(
                         pageCount: videoModel.videos.count,
                         currentPage: $currentIndex
                     ) { index in
-                        VideoPlayerView(videoURL: videoModel.videos[index])
+                        let url = videoModel.videos[index]
+                        let fileName = url.lastPathComponent
+                        // 预加载当前及相邻视频
+                        let preloadedItem = videoModel.preloadItem(for: url)
+                        if index > 0 {
+                            _ = videoModel.preloadItem(for: videoModel.videos[index-1])
+                        }
+                        if index < videoModel.videos.count - 1 {
+                            _ = videoModel.preloadItem(for: videoModel.videos[index+1])
+                        }
+                        
+                        VideoPlayerView(videoURL: url, playerItem: preloadedItem, fileName: fileName)
                             .frame(width: geometry.size.width, height: geometry.size.height)
+                            .onAppear {
+                                videoModel.cleanupItems(except: url)
+                                videoModel.currentIndex = index
+                                videoModel.savePosition()
+                            }
                     }
                     .ignoresSafeArea()
                 }
-
-                // 刷新按钮
+                
+                // 右上角刷新按钮
                 Button(action: {
                     videoModel.loadVideos()
                 }) {
@@ -44,10 +60,48 @@ struct ContentView: View {
                         .foregroundColor(.white)
                 }
                 .padding()
+                
+                // 左下角删除按钮（长按显示）
+                if !videoModel.videos.isEmpty {
+                    Button(action: {
+                        showDeleteConfirm = true
+                    }) {
+                        Image(systemName: "trash")
+                            .padding(12)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
+                            .foregroundColor(.white)
+                    }
+                    .padding(.leading, 20)
+                    .padding(.bottom, 20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .alert(isPresented: $showDeleteConfirm) {
+                        Alert(
+                            title: Text("删除视频"),
+                            message: Text("确定要删除当前视频吗？"),
+                            primaryButton: .destructive(Text("删除")) {
+                                videoModel.deleteVideo(at: currentIndex)
+                                // 如果列表不为空，调整索引
+                                if videoModel.videos.isEmpty {
+                                    currentIndex = 0
+                                } else if currentIndex >= videoModel.videos.count {
+                                    currentIndex = videoModel.videos.count - 1
+                                }
+                            },
+                            secondaryButton: .cancel()
+                        )
+                    }
+                }
             }
         }
         .onAppear {
             videoModel.loadVideos()
+            // 恢复索引
+            if videoModel.videos.indices.contains(videoModel.currentIndex) {
+                currentIndex = videoModel.currentIndex
+            } else {
+                currentIndex = 0
+            }
         }
     }
 }
@@ -66,7 +120,6 @@ struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
         scrollView.bounces = true
         scrollView.delegate = context.coordinator
 
-        // 设置内容大小和视图
         let containerView = UIHostingController(rootView: makeContentViews()).view!
         containerView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.addSubview(containerView)
@@ -84,12 +137,10 @@ struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIScrollView, context: Context) {
-        // 当外部 currentPage 改变时，滚动到对应页
         let offsetY = CGFloat(currentPage) * uiView.bounds.height
         if uiView.contentOffset.y != offsetY {
             uiView.setContentOffset(CGPoint(x: 0, y: offsetY), animated: true)
         }
-        // 如果页数变化，需要更新内容视图高度
         if let containerView = uiView.subviews.first {
             containerView.frame.size.height = CGFloat(pageCount) * uiView.bounds.height
         }
