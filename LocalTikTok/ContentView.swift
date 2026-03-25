@@ -27,19 +27,16 @@ struct ContentView: View {
                         pageCount: videoModel.videos.count,
                         currentPage: $currentIndex
                     ) { index in
-                        let url = videoModel.videos[index]
-                        let fileName = url.lastPathComponent
-                        let preloadedItem = videoModel.preloadItem(for: url)
-                        
                         VideoPlayerView(
-                            videoURL: url,
-                            playerItem: preloadedItem,
-                            fileName: fileName,
+                            videoURL: videoModel.videos[index],
+                            fileName: videoModel.videos[index].lastPathComponent,
                             isActive: index == currentIndex
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .onAppear {
-                            // 预加载相邻视频（在视图出现时预加载，保证即时性）
+                            let url = videoModel.videos[index]
+                            // 预加载当前及相邻视频
+                            _ = videoModel.preloadItem(for: url)
                             if index > 0 {
                                 _ = videoModel.preloadItem(for: videoModel.videos[index-1])
                             }
@@ -54,7 +51,7 @@ struct ContentView: View {
                     .ignoresSafeArea()
                 }
                 
-                // 右上角刷新按钮
+                // 刷新按钮
                 Button(action: {
                     videoModel.loadVideos()
                 }) {
@@ -66,7 +63,7 @@ struct ContentView: View {
                 }
                 .padding()
                 
-                // 左下角删除按钮（点击显示确认）
+                // 删除按钮
                 if !videoModel.videos.isEmpty {
                     Button(action: {
                         showDeleteConfirm = true
@@ -86,7 +83,6 @@ struct ContentView: View {
                             message: Text("确定要删除当前视频吗？"),
                             primaryButton: .destructive(Text("删除")) {
                                 videoModel.deleteVideo(at: currentIndex)
-                                // 如果列表不为空，调整索引
                                 if videoModel.videos.isEmpty {
                                     currentIndex = 0
                                 } else if currentIndex >= videoModel.videos.count {
@@ -101,7 +97,6 @@ struct ContentView: View {
         }
         .onAppear {
             videoModel.loadVideos()
-            // 恢复索引
             if videoModel.videos.indices.contains(videoModel.currentIndex) {
                 currentIndex = videoModel.currentIndex
             } else {
@@ -164,18 +159,15 @@ struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
 
     class Coordinator: NSObject, UIScrollViewDelegate {
         var parent: VerticalPagingScrollView
-
         init(_ parent: VerticalPagingScrollView) {
             self.parent = parent
         }
-
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
             let page = Int(scrollView.contentOffset.y / scrollView.bounds.height)
             if page != parent.currentPage {
                 parent.currentPage = page
             }
         }
-
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
             if !decelerate {
                 let page = Int(scrollView.contentOffset.y / scrollView.bounds.height)
