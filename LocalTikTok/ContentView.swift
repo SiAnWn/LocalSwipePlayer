@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var videoModel: VideoModel
+    @StateObject private var videoModel = VideoModel()
     @State private var currentIndex: Int = 0
     @State private var showDeleteConfirm = false
     
@@ -23,34 +23,28 @@ struct ContentView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    VerticalPagingScrollView(
-                        pageCount: videoModel.videos.count,
-                        currentPage: $currentIndex
-                    ) { index in
-                        VideoPlayerView(
-                            videoURL: videoModel.videos[index],
-                            fileName: videoModel.videos[index].lastPathComponent,
-                            isActive: index == currentIndex
-                        )
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .onAppear {
-                            let url = videoModel.videos[index]
-                            _ = videoModel.preloadItem(for: url)
-                            if index > 0 {
-                                _ = videoModel.preloadItem(for: videoModel.videos[index-1])
-                            }
-                            if index < videoModel.videos.count - 1 {
-                                _ = videoModel.preloadItem(for: videoModel.videos[index+1])
-                            }
-                            videoModel.cleanupItems(except: url)
-                            videoModel.currentIndex = index
-                            videoModel.savePosition()
+                    VideoCollectionView(
+                        videos: videoModel.videos,
+                        currentIndex: $currentIndex,
+                        onVideoChanged: { newURL in
+                            // 当滚动到新视频时，通知播放器加载
+                            VideoPlayerManager.shared.loadVideo(url: newURL, autoPlay: true)
+                        }
+                    )
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .ignoresSafeArea()
+                    .onAppear {
+                        // 初始加载第一个视频
+                        if let firstURL = videoModel.videos.first {
+                            VideoPlayerManager.shared.loadVideo(url: firstURL, autoPlay: true)
                         }
                     }
-                    .ignoresSafeArea()
                 }
                 
-                Button(action: { videoModel.loadVideos() }) {
+                // 刷新按钮
+                Button(action: {
+                    videoModel.loadVideos()
+                }) {
                     Image(systemName: "arrow.clockwise")
                         .padding(12)
                         .background(Color.black.opacity(0.6))
@@ -59,6 +53,7 @@ struct ContentView: View {
                 }
                 .padding()
                 
+                // 删除按钮
                 if !videoModel.videos.isEmpty {
                     Button(action: { showDeleteConfirm = true }) {
                         Image(systemName: "trash")
@@ -81,6 +76,12 @@ struct ContentView: View {
                                 } else if currentIndex >= videoModel.videos.count {
                                     currentIndex = videoModel.videos.count - 1
                                 }
+                                // 如果删除后还有视频，重新加载当前视频
+                                if !videoModel.videos.isEmpty {
+                                    VideoPlayerManager.shared.loadVideo(url: videoModel.videos[currentIndex], autoPlay: true)
+                                } else {
+                                    VideoPlayerManager.shared.pause()
+                                }
                             },
                             secondaryButton: .cancel()
                         )
@@ -94,117 +95,6 @@ struct ContentView: View {
                 currentIndex = videoModel.currentIndex
             } else {
                 currentIndex = 0
-            }
-        }
-    }
-}
-
-// MARK: - 竖向分页滚动视图（支持向上滑动随机播放）
-struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
-    let pageCount: Int
-    @Binding var currentPage: Int
-    let content: (Int) -> Content
-
-    func makeUIView(context: Context) -> UIScrollView {
-        let scrollView = UIScrollView()
-        scrollView.isPagingEnabled = true
-        scrollView.showsVerticalScrollIndicator = false
-        scrollView.showsHorizontalScrollIndicator = false
-        scrollView.bounces = true
-        scrollView.delegate = context.coordinator
-
-        let containerView = UIHostingController(rootView: makeContentViews()).view!
-        containerView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.addSubview(containerView)
-
-        NSLayoutConstraint.activate([
-            containerView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
-            containerView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
-            containerView.topAnchor.constraint(equalTo: scrollView.topAnchor),
-            containerView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
-            containerView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
-            containerView.heightAnchor.constraint(equalToConstant: CGFloat(pageCount) * UIScreen.main.bounds.height)
-        ])
-
-        return scrollView
-    }
-
-    func updateUIView(_ uiView: UIScrollView, context: Context) {
-        let offsetY = CGFloat(currentPage) * uiView.bounds.height
-        if uiView.contentOffset.y != offsetY {
-            uiView.setContentOffset(CGPoint(x: 0, y: offsetY), animated: true)
-        }
-        if let containerView = uiView.subviews.first {
-            containerView.frame.size.height = CGFloat(pageCount) * uiView.bounds.height
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    private func makeContentViews() -> some View {
-        ForEach(0..<pageCount, id: \.self) { index in
-            content(index)
-                .frame(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.height)
-        }
-    }
-
-    class Coordinator: NSObject, UIScrollViewDelegate {
-        var parent: VerticalPagingScrollView
-        var lastPage: Int = 0
-        var isRandomJumping = false
-
-        init(_ parent: VerticalPagingScrollView) {
-            self.parent = parent
-        }
-
-        func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-            lastPage = parent.currentPage
-        }
-
-        func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-            guard !isRandomJumping else { return }
-            let currentPageAfterScroll = Int(scrollView.contentOffset.y / scrollView.bounds.height)
-
-            // 向上滑动（页码减小）则随机跳转
-            if currentPageAfterScroll < lastPage {
-                guard parent.pageCount > 1 else { return }
-                var randomPage = Int.random(in: 0..<parent.pageCount)
-                while randomPage == currentPageAfterScroll {
-                    randomPage = Int.random(in: 0..<parent.pageCount)
-                }
-                isRandomJumping = true
-                parent.currentPage = randomPage
-                DispatchQueue.main.async {
-                    self.isRandomJumping = false
-                }
-            } else {
-                if currentPageAfterScroll != parent.currentPage {
-                    parent.currentPage = currentPageAfterScroll
-                }
-            }
-        }
-
-        func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-            if !decelerate {
-                let currentPageAfterScroll = Int(scrollView.contentOffset.y / scrollView.bounds.height)
-                if currentPageAfterScroll < lastPage {
-                    guard parent.pageCount > 1 else { return }
-                    var randomPage = Int.random(in: 0..<parent.pageCount)
-                    while randomPage == currentPageAfterScroll {
-                        randomPage = Int.random(in: 0..<parent.pageCount)
-                    }
-                    isRandomJumping = true
-                    parent.currentPage = randomPage
-                    DispatchQueue.main.async {
-                        self.isRandomJumping = false
-                    }
-                } else {
-                    if currentPageAfterScroll != parent.currentPage {
-                        parent.currentPage = currentPageAfterScroll
-                    }
-                }
             }
         }
     }
