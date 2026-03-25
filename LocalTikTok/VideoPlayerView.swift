@@ -1,7 +1,5 @@
 import SwiftUI
 import AVKit
-import Combine
-import UIKit
 import Photos
 import MediaPlayer
 
@@ -10,7 +8,7 @@ struct VideoPlayerView: View {
     let playerItem: AVPlayerItem?
     let fileName: String
     @EnvironmentObject var videoModel: VideoModel
-    
+
     @State private var player: AVPlayer?
     @State private var isPlaying = false
     @State private var currentTime: TimeInterval = 0
@@ -19,117 +17,206 @@ struct VideoPlayerView: View {
     @State private var hideControlsWorkItem: DispatchWorkItem?
     @State private var showFileName = false
     @State private var fileNameWorkItem: DispatchWorkItem?
-    
-    @State private var startLocation: CGPoint = .zero
-    @State private var startBrightness: CGFloat = UIScreen.main.brightness
-    @State private var startVolume: Float = AVAudioSession.sharedInstance().outputVolume
+
+    // 手势相关
     @State private var isAdjustingBrightness = false
     @State private var isAdjustingVolume = false
-    
+    @State private var startBrightness: CGFloat = UIScreen.main.brightness
+    @State private var startVolume: Float = AVAudioSession.sharedInstance().outputVolume
+
+    // 倍速
     @State private var speed: Float = 1.0
     @State private var showSpeedMenu = false
-    
+
     @State private var timeObserver: Any?
     @State private var loopEnabled = true
-    
+
     init(videoURL: URL, playerItem: AVPlayerItem?, fileName: String) {
         self.videoURL = videoURL
         self.playerItem = playerItem
         self.fileName = fileName
     }
-    
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                PlayerLayerView(player: player)
+                // 播放器视图
+                playerView
                     .onAppear {
-                        if player == nil {
-                            setupPlayer()
-                        }
-                        player?.play()
-                        isPlaying = true
+                        setupPlayer()
                         startTimeObserver()
                         if videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
-                            let savedTime = videoModel.currentTime
-                            if savedTime > 0 && savedTime < duration {
-                                player?.seek(to: CMTime(seconds: savedTime, preferredTimescale: 600))
+                            let saved = videoModel.currentTime
+                            if saved > 0 && saved < duration {
+                                player?.seek(to: CMTime(seconds: saved, preferredTimescale: 600))
                             }
                         }
                     }
                     .onDisappear {
                         player?.pause()
-                        isPlaying = false
                         removeTimeObserver()
                         videoModel.currentTime = currentTime
                         videoModel.savePosition()
                     }
-                
-                ControlsOverlayView(
-                    showControls: $showControls,
-                    currentTime: currentTime,
-                    duration: duration,
-                    onSeek: { seek(to: $0) }
-                )
-                
-                FileNameOverlayView(showFileName: $showFileName, fileName: fileName)
-                
-                SpeedMenuView(showSpeedMenu: $showSpeedMenu, currentSpeed: speed, onSpeedSelected: { setSpeed($0) })
+
+                // 控制层（进度条）
+                if showControls {
+                    controlsView
+                }
+
+                // 文件名浮层
+                if showFileName {
+                    fileNameOverlay
+                }
+
+                // 倍速菜单
+                if showSpeedMenu {
+                    speedMenuView
+                }
             }
             .ignoresSafeArea()
-            .onTapGesture(count: 2) {
-                captureScreenshot()
-            }
-            .onLongPressGesture(minimumDuration: 0.5) {
-                withAnimation {
-                    showSpeedMenu.toggle()
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    withAnimation {
-                        showSpeedMenu = false
-                    }
-                }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 10)
-                    .onChanged { value in
-                        let screenWidth = geometry.size.width
-                        let isLeft = value.startLocation.x < screenWidth / 2
-                        let deltaY = value.translation.height / screenWidth
-                        
-                        if !isAdjustingBrightness && !isAdjustingVolume {
-                            if isLeft {
-                                isAdjustingBrightness = true
-                                startBrightness = UIScreen.main.brightness
-                            } else {
-                                isAdjustingVolume = true
-                                startVolume = AVAudioSession.sharedInstance().outputVolume
-                            }
-                        }
-                        
-                        if isAdjustingBrightness {
-                            let newBrightness = startBrightness - deltaY
-                            UIScreen.main.brightness = min(max(newBrightness, 0), 1)
-                        } else if isAdjustingVolume {
-                            let newVolume = startVolume - Float(deltaY)
-                            let volumeView = MPVolumeView()
-                            if let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider {
-                                slider.value = min(max(newVolume, 0), 1)
-                            }
-                        }
-                    }
-                    .onEnded { _ in
-                        isAdjustingBrightness = false
-                        isAdjustingVolume = false
-                    }
-            )
+            .onTapGesture(count: 2) { captureScreenshot() }
+            .onLongPressGesture(minimumDuration: 0.5) { showSpeedMenu = true }
+            .gesture(dragGesture(geometry: geometry))
             .onTapGesture {
                 toggleControls()
                 showFileNameBriefly()
             }
         }
     }
-    
-    // MARK: - 播放器逻辑
+
+    // MARK: - 播放器视图
+    @ViewBuilder
+    private var playerView: some View {
+        if let player = player {
+            VideoPlayerController(player: player)
+                .onAppear {
+                    player.play()
+                    isPlaying = true
+                }
+                .onDisappear {
+                    player.pause()
+                    isPlaying = false
+                }
+        } else {
+            Color.black
+        }
+    }
+
+    // MARK: - 控制层（进度条 + 时间）
+    @ViewBuilder
+    private var controlsView: some View {
+        VStack {
+            Spacer()
+            VStack(spacing: 8) {
+                Slider(value: Binding(
+                    get: { currentTime },
+                    set: { newValue in
+                        player?.seek(to: CMTime(seconds: newValue, preferredTimescale: 600))
+                    }
+                ), in: 0...max(duration, 1))
+                .accentColor(.white)
+
+                HStack {
+                    Text(formatTime(currentTime))
+                        .font(.caption)
+                        .foregroundColor(.white)
+                    Spacer()
+                    Text(formatTime(duration))
+                        .font(.caption)
+                        .foregroundColor(.white)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 30)
+            .background(Color.black.opacity(0.5))
+        }
+        .transition(.opacity)
+    }
+
+    // MARK: - 文件名浮层
+    @ViewBuilder
+    private var fileNameOverlay: some View {
+        VStack {
+            Text(fileName)
+                .font(.caption)
+                .padding(8)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(8)
+                .foregroundColor(.white)
+                .padding(.top, 50)
+            Spacer()
+        }
+        .transition(.opacity)
+    }
+
+    // MARK: - 倍速菜单
+    @ViewBuilder
+    private var speedMenuView: some View {
+        VStack(spacing: 12) {
+            ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { sp in
+                Button(action: {
+                    speed = sp
+                    player?.rate = speed
+                    showSpeedMenu = false
+                }) {
+                    Text("\(sp)x")
+                        .foregroundColor(.white)
+                        .padding(.vertical, 8)
+                        .frame(width: 80)
+                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
+                        .cornerRadius(8)
+                }
+            }
+        }
+        .padding()
+        .background(Color.black.opacity(0.8))
+        .cornerRadius(12)
+        .transition(.scale)
+        .onAppear {
+            // 2秒后自动关闭
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                withAnimation { showSpeedMenu = false }
+            }
+        }
+    }
+
+    // MARK: - 拖拽手势（亮度/音量）
+    private func dragGesture(geometry: GeometryProxy) -> some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                let screenWidth = geometry.size.width
+                let isLeft = value.startLocation.x < screenWidth / 2
+                let deltaY = value.translation.height / screenWidth
+
+                if !isAdjustingBrightness && !isAdjustingVolume {
+                    if isLeft {
+                        isAdjustingBrightness = true
+                        startBrightness = UIScreen.main.brightness
+                    } else {
+                        isAdjustingVolume = true
+                        startVolume = AVAudioSession.sharedInstance().outputVolume
+                    }
+                }
+
+                if isAdjustingBrightness {
+                    let new = startBrightness - deltaY
+                    UIScreen.main.brightness = min(max(new, 0), 1)
+                } else if isAdjustingVolume {
+                    let new = startVolume - Float(deltaY)
+                    let volumeView = MPVolumeView()
+                    if let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider {
+                        slider.value = min(max(new, 0), 1)
+                    }
+                }
+            }
+            .onEnded { _ in
+                isAdjustingBrightness = false
+                isAdjustingVolume = false
+            }
+    }
+
+    // MARK: - 播放器初始化
     private func setupPlayer() {
         if let item = playerItem {
             player = AVPlayer(playerItem: item)
@@ -139,6 +226,8 @@ struct VideoPlayerView: View {
             item.preferredForwardBufferDuration = 5.0
             player = AVPlayer(playerItem: item)
         }
+
+        // 循环播放
         NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player?.currentItem,
@@ -150,82 +239,68 @@ struct VideoPlayerView: View {
             }
         }
     }
-    
+
     private func startTimeObserver() {
         guard let player = player else { return }
         removeTimeObserver()
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { time in
             self.currentTime = time.seconds
-            if let duration = player.currentItem?.duration, duration.isNumeric && !duration.isIndefinite {
-                self.duration = duration.seconds
+            if let dur = player.currentItem?.duration, dur.isNumeric && !dur.isIndefinite {
+                self.duration = dur.seconds
             }
         }
     }
-    
+
     private func removeTimeObserver() {
         if let observer = timeObserver, let player = player {
             player.removeTimeObserver(observer)
             timeObserver = nil
         }
     }
-    
-    private func seek(to time: TimeInterval) {
-        player?.seek(to: CMTime(seconds: time, preferredTimescale: 600))
-    }
-    
-    private func setSpeed(_ newSpeed: Float) {
-        speed = newSpeed
-        player?.rate = speed
-    }
-    
+
     // MARK: - 控制栏显示/隐藏
     private func toggleControls() {
         hideControlsWorkItem?.cancel()
-        withAnimation(.easeInOut(duration: 0.2)) {
-            showControls = true
-        }
+        withAnimation { showControls = true }
         let work = DispatchWorkItem {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                showControls = false
-            }
+            withAnimation { showControls = false }
         }
         hideControlsWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
     }
-    
+
     private func showFileNameBriefly() {
         fileNameWorkItem?.cancel()
-        withAnimation(.easeInOut(duration: 0.2)) {
-            showFileName = true
-        }
+        withAnimation { showFileName = true }
         let work = DispatchWorkItem {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                showFileName = false
-            }
+            withAnimation { showFileName = false }
         }
         fileNameWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
     }
-    
+
     // MARK: - 截图
     private func captureScreenshot() {
         guard let player = player else { return }
         let currentTime = player.currentTime()
         let asset = player.currentItem?.asset as? AVURLAsset
         guard let url = asset?.url else { return }
-        
+
         let generator = AVAssetImageGenerator(asset: AVAsset(url: url))
         generator.appliesPreferredTrackTransform = true
         generator.requestedTimeToleranceBefore = .zero
         generator.requestedTimeToleranceAfter = .zero
-        
+
         do {
             let cgImage = try generator.copyCGImage(at: currentTime, actualTime: nil)
             let image = UIImage(cgImage: cgImage)
             UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+            // 简单提示
             let alert = UIAlertController(title: nil, message: "截图已保存", preferredStyle: .alert)
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-               let rootVC = windowScene.windows.first?.rootViewController {
+            if let rootVC = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first?.windows
+                .first(where: { $0.isKeyWindow })?.rootViewController {
                 rootVC.present(alert, animated: true)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                     alert.dismiss(animated: true)
@@ -235,136 +310,20 @@ struct VideoPlayerView: View {
             print("截图失败: \(error)")
         }
     }
-}
 
-// MARK: - 播放器层子视图
-struct PlayerLayerView: UIViewRepresentable {
-    let player: AVPlayer?
-    
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .black
-        if let player = player {
-            let playerLayer = AVPlayerLayer(player: player)
-            playerLayer.videoGravity = .resizeAspectFill
-            playerLayer.frame = view.bounds
-            playerLayer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            view.layer.addSublayer(playerLayer)
-        }
-        return view
-    }
-    
-    func updateUIView(_ uiView: UIView, context: Context) {
-        if let player = player, let playerLayer = uiView.layer.sublayers?.first as? AVPlayerLayer {
-            playerLayer.player = player
-            playerLayer.frame = uiView.bounds
-        }
-    }
-}
-
-// MARK: - 控制栏子视图
-struct ControlsOverlayView: View {
-    @Binding var showControls: Bool
-    let currentTime: TimeInterval
-    let duration: TimeInterval
-    let onSeek: (TimeInterval) -> Void
-    
-    var body: some View {
-        if showControls {
-            VStack {
-                Spacer()
-                VStack(spacing: 8) {
-                    Slider(value: Binding(
-                        get: { currentTime },
-                        set: { onSeek($0) }
-                    ), in: 0...max(duration, 1))
-                    .accentColor(.white)
-                    .padding(.horizontal, 20)
-                    
-                    HStack {
-                        Text(formatTime(currentTime))
-                            .font(.caption)
-                            .foregroundColor(.white)
-                        Spacer()
-                        Text(formatTime(duration))
-                            .font(.caption)
-                            .foregroundColor(.white)
-                    }
-                    .padding(.horizontal, 20)
-                }
-                .padding(.bottom, 30)
-                .background(Color.black.opacity(0.5))
-            }
-            .transition(.opacity)
-        }
-    }
-    
     private func formatTime(_ seconds: TimeInterval) -> String {
         if seconds.isNaN || seconds.isInfinite { return "00:00" }
-        let totalSeconds = Int(seconds)
-        let minutes = totalSeconds / 60
-        let secs = totalSeconds % 60
-        return String(format: "%02d:%02d", minutes, secs)
+        let total = Int(seconds)
+        let mins = total / 60
+        let secs = total % 60
+        return String(format: "%02d:%02d", mins, secs)
     }
 }
 
-// MARK: - 文件名子视图
-struct FileNameOverlayView: View {
-    @Binding var showFileName: Bool
-    let fileName: String
-    
-    var body: some View {
-        if showFileName {
-            VStack {
-                Text(fileName)
-                    .font(.caption)
-                    .padding(8)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(8)
-                    .foregroundColor(.white)
-                    .padding(.top, 50)
-                Spacer()
-            }
-            .transition(.opacity)
-        }
-    }
-}
-
-// MARK: - 倍速菜单子视图
-struct SpeedMenuView: View {
-    @Binding var showSpeedMenu: Bool
-    let currentSpeed: Float
-    let onSpeedSelected: (Float) -> Void
-    
-    var body: some View {
-        if showSpeedMenu {
-            VStack(spacing: 12) {
-                ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { sp in
-                    Button(action: {
-                        onSpeedSelected(sp)
-                        showSpeedMenu = false
-                    }) {
-                        Text("\(sp)x")
-                            .foregroundColor(.white)
-                            .padding(.vertical, 8)
-                            .frame(width: 80)
-                            .background(currentSpeed == sp ? Color.blue : Color.black.opacity(0.7))
-                            .cornerRadius(8)
-                    }
-                }
-            }
-            .padding()
-            .background(Color.black.opacity(0.8))
-            .cornerRadius(12)
-            .transition(.scale)
-        }
-    }
-}
-
-// MARK: - AVPlayerViewController 封装（备用，可能未用）
+// MARK: - AVPlayerViewController 封装
 struct VideoPlayerController: UIViewControllerRepresentable {
     let player: AVPlayer
-    
+
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
@@ -372,6 +331,6 @@ struct VideoPlayerController: UIViewControllerRepresentable {
         controller.videoGravity = .resizeAspectFill
         return controller
     }
-    
+
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {}
 }
