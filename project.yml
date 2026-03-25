@@ -1,0 +1,23 @@
+name: LocalTikTok
+options:
+  bundleIdPrefix: com.yourname
+targets:
+  LocalTikTok:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources: [LocalTikTok]
+    info:
+      path: LocalTikTok/Info.plist
+      properties:
+        CFBundleIdentifier: com.yourname.localtiktok
+        CFBundleName: LocalTikTok
+        CFBundleDisplayName: LocalTikTok
+        UILaunchStoryboardName: LaunchScreen
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+    settings:
+      base:
+        SWIFT_VERSION: 5.0
+        PRODUCT_BUNDLE_IDENTIFIER: com.yourname.localtiktok
