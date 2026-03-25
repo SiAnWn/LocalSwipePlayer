@@ -18,48 +18,41 @@ struct ContentView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
                 if videoModel.videos.isEmpty {
-                    emptyStateView
+                    emptyView
                 } else {
                     videoScrollView(geometry: geometry)
+                        .gesture(
+                            DragGesture()
+                                .onEnded { value in
+                                    // 向上滑动随机跳转
+                                    if value.translation.height < -50 {
+                                        randomJump()
+                                    }
+                                }
+                        )
+                    
+                    // 控制栏
+                    if showControls {
+                        controlBarView
+                    }
+                    
+                    // 文件名浮层
+                    if showFileName {
+                        fileNameOverlay
+                    }
+                    
+                    // 倍速菜单
+                    if showSpeedMenu {
+                        speedMenuView
+                    }
                 }
                 
                 // 刷新按钮
-                Button(action: { videoModel.loadVideos() }) {
-                    Image(systemName: "arrow.clockwise")
-                        .padding(12)
-                        .background(Color.black.opacity(0.6))
-                        .clipShape(Circle())
-                        .foregroundColor(.white)
-                }
-                .padding()
+                refreshButton
                 
                 // 删除按钮
                 if !videoModel.videos.isEmpty {
-                    Button(action: { showDeleteConfirm = true }) {
-                        Image(systemName: "trash")
-                            .padding(12)
-                            .background(Color.black.opacity(0.6))
-                            .clipShape(Circle())
-                            .foregroundColor(.white)
-                    }
-                    .padding(.leading, 20)
-                    .padding(.bottom, 20)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                    .alert(isPresented: $showDeleteConfirm) {
-                        Alert(
-                            title: Text("删除视频"),
-                            message: Text("确定要删除当前视频吗？"),
-                            primaryButton: .destructive(Text("删除")) {
-                                videoModel.deleteVideo(at: currentIndex)
-                                if videoModel.videos.isEmpty {
-                                    currentIndex = 0
-                                } else if currentIndex >= videoModel.videos.count {
-                                    currentIndex = videoModel.videos.count - 1
-                                }
-                            },
-                            secondaryButton: .cancel()
-                        )
-                    }
+                    deleteButton
                 }
             }
             .onAppear {
@@ -86,24 +79,12 @@ struct ContentView: View {
                 toggleControls()
                 showFileNameBriefly()
             }
-            .overlay(
-                Group {
-                    if showControls {
-                        controlsOverlay
-                    }
-                    if showFileName {
-                        fileNameOverlay
-                    }
-                    if showSpeedMenu {
-                        speedMenuOverlay
-                    }
-                }
-            )
         }
     }
     
-    // MARK: - 空状态视图
-    private var emptyStateView: some View {
+    // MARK: - 子视图
+    
+    private var emptyView: some View {
         VStack(spacing: 20) {
             Image(systemName: "video.slash")
                 .font(.largeTitle)
@@ -118,8 +99,6 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - 视频滚动视图
-    @ViewBuilder
     private func videoScrollView(geometry: GeometryProxy) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
@@ -132,15 +111,7 @@ struct ContentView: View {
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .onAppear {
-                        // 预加载相邻视频
-                        _ = videoModel.preloadItem(for: url)
-                        if index > 0 {
-                            _ = videoModel.preloadItem(for: videoModel.videos[index-1])
-                        }
-                        if index < videoModel.videos.count - 1 {
-                            _ = videoModel.preloadItem(for: videoModel.videos[index+1])
-                        }
-                        videoModel.cleanupItems(except: url)
+                        preloadVideos(at: index)
                         videoModel.currentIndex = index
                         videoModel.savePosition()
                     }
@@ -153,29 +124,12 @@ struct ContentView: View {
         .ignoresSafeArea()
         .onChange(of: currentIndex) { newIndex in
             if newIndex < videoModel.videos.count {
-                let newURL = videoModel.videos[newIndex]
-                VideoPlayerManager.shared.loadVideo(url: newURL, autoPlay: true)
+                VideoPlayerManager.shared.loadVideo(url: videoModel.videos[newIndex], autoPlay: true)
             }
         }
-        .gesture(
-            DragGesture()
-                .onEnded { value in
-                    if value.translation.height < -50 {
-                        guard videoModel.videos.count > 1 else { return }
-                        var randomIndex = Int.random(in: 0..<videoModel.videos.count)
-                        while randomIndex == currentIndex {
-                            randomIndex = Int.random(in: 0..<videoModel.videos.count)
-                        }
-                        withAnimation {
-                            currentIndex = randomIndex
-                        }
-                    }
-                }
-        )
     }
     
-    // MARK: - 控制栏浮层
-    private var controlsOverlay: some View {
+    private var controlBarView: some View {
         VStack {
             Spacer()
             VStack(spacing: 8) {
@@ -205,7 +159,6 @@ struct ContentView: View {
         .transition(.opacity)
     }
     
-    // MARK: - 文件名浮层
     private var fileNameOverlay: some View {
         VStack {
             Text(videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
@@ -220,8 +173,7 @@ struct ContentView: View {
         .transition(.opacity)
     }
     
-    // MARK: - 倍速菜单浮层
-    private var speedMenuOverlay: some View {
+    private var speedMenuView: some View {
         VStack(spacing: 12) {
             ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { sp in
                 Button(action: {
@@ -244,7 +196,72 @@ struct ContentView: View {
         .transition(.scale)
     }
     
-    // MARK: - 辅助功能
+    private var refreshButton: some View {
+        Button(action: {
+            videoModel.loadVideos()
+        }) {
+            Image(systemName: "arrow.clockwise")
+                .padding(12)
+                .background(Color.black.opacity(0.6))
+                .clipShape(Circle())
+                .foregroundColor(.white)
+        }
+        .padding()
+    }
+    
+    private var deleteButton: some View {
+        Button(action: { showDeleteConfirm = true }) {
+            Image(systemName: "trash")
+                .padding(12)
+                .background(Color.black.opacity(0.6))
+                .clipShape(Circle())
+                .foregroundColor(.white)
+        }
+        .padding(.leading, 20)
+        .padding(.bottom, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .alert(isPresented: $showDeleteConfirm) {
+            Alert(
+                title: Text("删除视频"),
+                message: Text("确定要删除当前视频吗？"),
+                primaryButton: .destructive(Text("删除")) {
+                    videoModel.deleteVideo(at: currentIndex)
+                    if videoModel.videos.isEmpty {
+                        currentIndex = 0
+                    } else if currentIndex >= videoModel.videos.count {
+                        currentIndex = videoModel.videos.count - 1
+                    }
+                },
+                secondaryButton: .cancel()
+            )
+        }
+    }
+    
+    // MARK: - 辅助方法
+    
+    private func preloadVideos(at index: Int) {
+        let url = videoModel.videos[index]
+        _ = videoModel.preloadItem(for: url)
+        if index > 0 {
+            _ = videoModel.preloadItem(for: videoModel.videos[index-1])
+        }
+        if index < videoModel.videos.count - 1 {
+            _ = videoModel.preloadItem(for: videoModel.videos[index+1])
+        }
+        videoModel.cleanupItems(except: url)
+    }
+    
+    private func randomJump() {
+        guard videoModel.videos.count > 1 else { return }
+        var randomIndex = Int.random(in: 0..<videoModel.videos.count)
+        while randomIndex == currentIndex {
+            randomIndex = Int.random(in: 0..<videoModel.videos.count)
+        }
+        withAnimation {
+            currentIndex = randomIndex
+        }
+    }
+    
     private func toggleControls() {
         hideControlsWorkItem?.cancel()
         withAnimation { showControls = true }
@@ -273,6 +290,7 @@ struct ContentView: View {
             let cgImage = try generator.copyCGImage(at: CMTime(seconds: time, preferredTimescale: 600), actualTime: nil)
             let image = UIImage(cgImage: cgImage)
             UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+            // 简单提示
             let alert = UIAlertController(title: nil, message: "截图已保存", preferredStyle: .alert)
             if let rootVC = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene })
