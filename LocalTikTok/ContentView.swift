@@ -4,7 +4,7 @@ struct ContentView: View {
     @EnvironmentObject var videoModel: VideoModel
     @State private var currentIndex: Int = 0
     @State private var showDeleteConfirm = false
-    
+
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
@@ -49,7 +49,7 @@ struct ContentView: View {
                     }
                     .ignoresSafeArea()
                 }
-                
+
                 // 刷新按钮
                 Button(action: {
                     videoModel.loadVideos()
@@ -61,7 +61,7 @@ struct ContentView: View {
                         .foregroundColor(.white)
                 }
                 .padding()
-                
+
                 // 删除按钮
                 if !videoModel.videos.isEmpty {
                     Button(action: {
@@ -105,7 +105,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - VerticalPagingScrollView
+// MARK: - 竖向分页滚动视图（兼容 iOS 15）
 struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
     let pageCount: Int
     @Binding var currentPage: Int
