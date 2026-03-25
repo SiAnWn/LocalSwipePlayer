@@ -23,13 +23,13 @@ struct ContentView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    VerticalPagingScrollView(
+                    // 使用显式返回的 VerticalPagingScrollView
+                    let scrollView = VerticalPagingScrollView(
                         pageCount: videoModel.videos.count,
                         currentPage: $currentIndex
                     ) { index in
                         let url = videoModel.videos[index]
                         let fileName = url.lastPathComponent
-                        // 预加载当前及相邻视频
                         let preloadedItem = videoModel.preloadItem(for: url)
                         if index > 0 {
                             _ = videoModel.preloadItem(for: videoModel.videos[index-1])
@@ -37,8 +37,7 @@ struct ContentView: View {
                         if index < videoModel.videos.count - 1 {
                             _ = videoModel.preloadItem(for: videoModel.videos[index+1])
                         }
-                        
-                        VideoPlayerView(videoURL: url, playerItem: preloadedItem, fileName: fileName)
+                        return VideoPlayerView(videoURL: url, playerItem: preloadedItem, fileName: fileName)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .onAppear {
                                 videoModel.cleanupItems(except: url)
@@ -46,7 +45,7 @@ struct ContentView: View {
                                 videoModel.savePosition()
                             }
                     }
-                    .ignoresSafeArea()
+                    scrollView.ignoresSafeArea()
                 }
                 
                 // 右上角刷新按钮
@@ -61,7 +60,7 @@ struct ContentView: View {
                 }
                 .padding()
                 
-                // 左下角删除按钮（点击显示确认）
+                // 左下角删除按钮
                 if !videoModel.videos.isEmpty {
                     Button(action: {
                         showDeleteConfirm = true
@@ -81,7 +80,6 @@ struct ContentView: View {
                             message: Text("确定要删除当前视频吗？"),
                             primaryButton: .destructive(Text("删除")) {
                                 videoModel.deleteVideo(at: currentIndex)
-                                // 如果列表不为空，调整索引
                                 if videoModel.videos.isEmpty {
                                     currentIndex = 0
                                 } else if currentIndex >= videoModel.videos.count {
@@ -96,7 +94,6 @@ struct ContentView: View {
         }
         .onAppear {
             videoModel.loadVideos()
-            // 恢复索引
             if videoModel.videos.indices.contains(videoModel.currentIndex) {
                 currentIndex = videoModel.currentIndex
             } else {
@@ -106,7 +103,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - 竖向分页滚动视图（兼容 iOS 15）
+// MARK: - 竖向分页滚动视图
 struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
     let pageCount: Int
     @Binding var currentPage: Int
