@@ -8,9 +8,7 @@ struct ContentView: View {
     @State private var currentTime: TimeInterval = 0
     @State private var duration: TimeInterval = 0
     @State private var showControls = false
-    @State private var hideControlsWorkItem: DispatchWorkItem?
     @State private var showFileName = false
-    @State private var fileNameWorkItem: DispatchWorkItem?
     @State private var showSpeedMenu = false
     @State private var speed: Float = 1.0
     
@@ -18,7 +16,7 @@ struct ContentView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
                 if videoModel.videos.isEmpty {
-                    emptyView
+                    EmptyStateView(refreshAction: { videoModel.loadVideos() })
                 } else {
                     ZStack(alignment: .bottomLeading) {
                         // 播放器滚动视图
@@ -33,60 +31,62 @@ struct ContentView: View {
                             .frame(width: geometry.size.width, height: geometry.size.height)
                         }
                         .ignoresSafeArea()
+                        .onTapGesture { toggleControls(); showFileNameBriefly() }
+                        .onTapGesture(count: 2) { captureScreenshot() }
+                        .onLongPressGesture(minimumDuration: 0.5) {
+                            showSpeedMenu.toggle()
+                            autoHideSpeedMenu()
+                        }
+                        .gesture(
+                            DragGesture()
+                                .onEnded { value in
+                                    if value.translation.height < -50 && videoModel.videos.count > 1 {
+                                        var randomIndex = Int.random(in: 0..<videoModel.videos.count)
+                                        while randomIndex == currentIndex {
+                                            randomIndex = Int.random(in: 0..<videoModel.videos.count)
+                                        }
+                                        withAnimation {
+                                            currentIndex = randomIndex
+                                        }
+                                    }
+                                }
+                        )
                         
-                        // 控制栏叠加（进度条）
+                        // 控制栏（进度条+时间）
                         if showControls {
-                            controlsView
+                            ControlBarView(
+                                currentTime: $currentTime,
+                                duration: duration,
+                                onSeek: { VideoPlayerManager.shared.seek(to: $0) }
+                            )
                         }
                         
                         // 文件名浮层
                         if showFileName {
-                            fileNameOverlay
+                            FileNameOverlayView(fileName: videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
                         }
                         
                         // 倍速菜单
                         if showSpeedMenu {
-                            speedMenuView
+                            SpeedMenuView(
+                                speed: $speed,
+                                onSpeedSelected: {
+                                    VideoPlayerManager.shared.setRate(speed)
+                                    showSpeedMenu = false
+                                }
+                            )
                         }
                     }
-                    .gesture(
-                        DragGesture()
-                            .onEnded { value in
-                                if value.translation.height < -50 && videoModel.videos.count > 1 {
-                                    var randomIndex = Int.random(in: 0..<videoModel.videos.count)
-                                    while randomIndex == currentIndex {
-                                        randomIndex = Int.random(in: 0..<videoModel.videos.count)
-                                    }
-                                    withAnimation {
-                                        currentIndex = randomIndex
-                                    }
-                                }
-                            }
-                    )
                 }
                 
-                // 刷新按钮
-                Button(action: { videoModel.loadVideos() }) {
-                    Image(systemName: "arrow.clockwise")
-                        .padding(12)
-                        .background(Color.black.opacity(0.6))
-                        .clipShape(Circle())
-                        .foregroundColor(.white)
-                }
-                .padding()
+                // 右上角刷新按钮
+                RefreshButton(action: { videoModel.loadVideos() })
                 
-                // 删除按钮
+                // 左下角删除按钮
                 if !videoModel.videos.isEmpty {
-                    Button(action: { showDeleteConfirm = true }) {
-                        Image(systemName: "trash")
-                            .padding(12)
-                            .background(Color.black.opacity(0.6))
-                            .clipShape(Circle())
-                            .foregroundColor(.white)
+                    DeleteButton {
+                        showDeleteConfirm = true
                     }
-                    .padding(.leading, 20)
-                    .padding(.bottom, 20)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .alert(isPresented: $showDeleteConfirm) {
                         Alert(
                             title: Text("删除视频"),
@@ -115,115 +115,28 @@ struct ContentView: View {
                     VideoPlayerManager.shared.loadVideo(url: firstURL, autoPlay: true)
                 }
             }
-            .onTapGesture(count: 2) { captureScreenshot() }
-            .onLongPressGesture(minimumDuration: 0.5) {
-                showSpeedMenu.toggle()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    withAnimation { showSpeedMenu = false }
-                }
-            }
-            .onTapGesture {
-                toggleControls()
-                showFileNameBriefly()
-            }
         }
     }
     
-    // 空状态视图
-    private var emptyView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "video.slash")
-                .font(.largeTitle)
-            Text("请将视频文件放入应用 Documents 目录")
-                .multilineTextAlignment(.center)
-            Button("刷新") {
-                videoModel.loadVideos()
-            }
-            .padding()
-            .background(Color.blue)
-            .cornerRadius(8)
-        }
-    }
-    
-    // 进度条控制栏
-    private var controlsView: some View {
-        VStack {
-            Spacer()
-            VStack(spacing: 8) {
-                Slider(value: Binding(
-                    get: { currentTime },
-                    set: { VideoPlayerManager.shared.seek(to: $0) }
-                ), in: 0...max(duration, 1))
-                .accentColor(.white)
-                .padding(.horizontal, 20)
-                
-                HStack {
-                    Text(formatTime(currentTime)).font(.caption).foregroundColor(.white)
-                    Spacer()
-                    Text(formatTime(duration)).font(.caption).foregroundColor(.white)
-                }
-                .padding(.horizontal, 20)
-            }
-            .padding(.bottom, 30)
-            .background(Color.black.opacity(0.5))
-        }
-        .transition(.opacity)
-    }
-    
-    // 文件名浮层
-    private var fileNameOverlay: some View {
-        VStack {
-            Text(videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
-                .font(.caption)
-                .padding(8)
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(8)
-                .foregroundColor(.white)
-                .padding(.top, 50)
-            Spacer()
-        }
-        .transition(.opacity)
-    }
-    
-    // 倍速菜单
-    private var speedMenuView: some View {
-        VStack(spacing: 12) {
-            ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { sp in
-                Button(action: {
-                    speed = sp
-                    VideoPlayerManager.shared.setRate(speed)
-                    showSpeedMenu = false
-                }) {
-                    Text("\(sp)x")
-                        .foregroundColor(.white)
-                        .padding(.vertical, 8)
-                        .frame(width: 80)
-                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
-                        .cornerRadius(8)
-                }
-            }
-        }
-        .padding()
-        .background(Color.black.opacity(0.8))
-        .cornerRadius(12)
-        .transition(.scale)
-    }
-    
-    // MARK: - 辅助功能
+    // MARK: - 辅助方法
     private func toggleControls() {
-        hideControlsWorkItem?.cancel()
         withAnimation { showControls = true }
-        let work = DispatchWorkItem { withAnimation { showControls = false } }
-        hideControlsWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation { showControls = false }
+        }
     }
     
     private func showFileNameBriefly() {
-        fileNameWorkItem?.cancel()
         withAnimation { showFileName = true }
-        let work = DispatchWorkItem { withAnimation { showFileName = false } }
-        fileNameWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation { showFileName = false }
+        }
+    }
+    
+    private func autoHideSpeedMenu() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation { showSpeedMenu = false }
+        }
     }
     
     private func captureScreenshot() {
@@ -250,6 +163,87 @@ struct ContentView: View {
             print("截图失败: \(error)")
         }
     }
+}
+
+// MARK: - 子视图组件
+struct EmptyStateView: View {
+    let refreshAction: () -> Void
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "video.slash")
+                .font(.largeTitle)
+            Text("请将视频文件放入应用 Documents 目录")
+                .multilineTextAlignment(.center)
+            Button("刷新", action: refreshAction)
+                .padding()
+                .background(Color.blue)
+                .cornerRadius(8)
+        }
+    }
+}
+
+struct RefreshButton: View {
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.clockwise")
+                .padding(12)
+                .background(Color.black.opacity(0.6))
+                .clipShape(Circle())
+                .foregroundColor(.white)
+        }
+        .padding()
+    }
+}
+
+struct DeleteButton: View {
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "trash")
+                .padding(12)
+                .background(Color.black.opacity(0.6))
+                .clipShape(Circle())
+                .foregroundColor(.white)
+        }
+        .padding(.leading, 20)
+        .padding(.bottom, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+    }
+}
+
+struct ControlBarView: View {
+    @Binding var currentTime: TimeInterval
+    let duration: TimeInterval
+    let onSeek: (TimeInterval) -> Void
+    
+    var body: some View {
+        VStack {
+            Spacer()
+            VStack(spacing: 8) {
+                Slider(value: Binding(
+                    get: { currentTime },
+                    set: { onSeek($0) }
+                ), in: 0...max(duration, 1))
+                .accentColor(.white)
+                .padding(.horizontal, 20)
+                
+                HStack {
+                    Text(formatTime(currentTime))
+                        .font(.caption)
+                        .foregroundColor(.white)
+                    Spacer()
+                    Text(formatTime(duration))
+                        .font(.caption)
+                        .foregroundColor(.white)
+                }
+                .padding(.horizontal, 20)
+            }
+            .padding(.bottom, 30)
+            .background(Color.black.opacity(0.5))
+        }
+        .transition(.opacity)
+    }
     
     private func formatTime(_ seconds: TimeInterval) -> String {
         if seconds.isNaN || seconds.isInfinite { return "00:00" }
@@ -258,7 +252,52 @@ struct ContentView: View {
     }
 }
 
-// MARK: - 竖向分页滚动视图（兼容 iOS 15）
+struct FileNameOverlayView: View {
+    let fileName: String
+    var body: some View {
+        VStack {
+            Text(fileName)
+                .font(.caption)
+                .padding(8)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(8)
+                .foregroundColor(.white)
+                .padding(.top, 50)
+            Spacer()
+        }
+        .transition(.opacity)
+    }
+}
+
+struct SpeedMenuView: View {
+    @Binding var speed: Float
+    let onSpeedSelected: () -> Void
+    let speeds: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            ForEach(speeds, id: \.self) { sp in
+                Button(action: {
+                    speed = sp
+                    onSpeedSelected()
+                }) {
+                    Text("\(sp)x")
+                        .foregroundColor(.white)
+                        .padding(.vertical, 8)
+                        .frame(width: 80)
+                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
+                        .cornerRadius(8)
+                }
+            }
+        }
+        .padding()
+        .background(Color.black.opacity(0.8))
+        .cornerRadius(12)
+        .transition(.scale)
+    }
+}
+
+// MARK: - 竖向分页滚动视图
 struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
     let pageCount: Int
     @Binding var currentPage: Int
