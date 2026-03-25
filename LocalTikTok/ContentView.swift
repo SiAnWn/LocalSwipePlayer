@@ -9,21 +9,44 @@ struct ContentView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
                 if videoModel.videos.isEmpty {
-                    EmptyStateView()
+                    VStack(spacing: 20) {
+                        Image(systemName: "video.slash")
+                            .font(.largeTitle)
+                        Text("请将视频文件放入应用 Documents 目录")
+                            .multilineTextAlignment(.center)
+                        Button("刷新") {
+                            videoModel.loadVideos()
+                        }
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(8)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VerticalPagingScrollView(
                         pageCount: videoModel.videos.count,
                         currentPage: $currentIndex
                     ) { index in
-                        // 明确返回 VideoPlayerView
+                        let url = videoModel.videos[index]
+                        let fileName = url.lastPathComponent
+                        // 预加载当前及相邻视频
+                        let preloadedItem = videoModel.preloadItem(for: url)
+                        if index > 0 {
+                            _ = videoModel.preloadItem(for: videoModel.videos[index-1])
+                        }
+                        if index < videoModel.videos.count - 1 {
+                            _ = videoModel.preloadItem(for: videoModel.videos[index+1])
+                        }
+                        
                         VideoPlayerView(
-                            videoURL: videoModel.videos[index],
-                            playerItem: videoModel.preloadItem(for: videoModel.videos[index]),
-                            fileName: videoModel.videos[index].lastPathComponent
+                            videoURL: url,
+                            playerItem: preloadedItem,
+                            fileName: fileName,
+                            isActive: index == currentIndex  // 传入激活状态
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .onAppear {
-                            videoModel.cleanupItems(except: videoModel.videos[index])
+                            videoModel.cleanupItems(except: url)
                             videoModel.currentIndex = index
                             videoModel.savePosition()
                         }
@@ -31,7 +54,7 @@ struct ContentView: View {
                     .ignoresSafeArea()
                 }
                 
-                // 刷新按钮
+                // 右上角刷新按钮
                 Button(action: {
                     videoModel.loadVideos()
                 }) {
@@ -43,7 +66,7 @@ struct ContentView: View {
                 }
                 .padding()
                 
-                // 删除按钮
+                // 左下角删除按钮（点击显示确认）
                 if !videoModel.videos.isEmpty {
                     Button(action: {
                         showDeleteConfirm = true
@@ -63,6 +86,7 @@ struct ContentView: View {
                             message: Text("确定要删除当前视频吗？"),
                             primaryButton: .destructive(Text("删除")) {
                                 videoModel.deleteVideo(at: currentIndex)
+                                // 如果列表不为空，调整索引
                                 if videoModel.videos.isEmpty {
                                     currentIndex = 0
                                 } else if currentIndex >= videoModel.videos.count {
@@ -77,31 +101,13 @@ struct ContentView: View {
         }
         .onAppear {
             videoModel.loadVideos()
+            // 恢复索引
             if videoModel.videos.indices.contains(videoModel.currentIndex) {
                 currentIndex = videoModel.currentIndex
             } else {
                 currentIndex = 0
             }
         }
-    }
-}
-
-// MARK: - 空状态视图
-struct EmptyStateView: View {
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "video.slash")
-                .font(.largeTitle)
-            Text("请将视频文件放入应用 Documents 目录")
-                .multilineTextAlignment(.center)
-            Button("刷新") {
-                // 通过环境对象刷新？需要在 ContentView 中处理，这里留空，实际通过外部的刷新按钮
-            }
-            .padding()
-            .background(Color.blue)
-            .cornerRadius(8)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
