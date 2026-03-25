@@ -29,7 +29,8 @@ struct ContentView: View {
                     ) { index in
                         VideoPlayerView(
                             videoURL: videoModel.videos[index],
-                            fileName: videoModel.videos[index].lastPathComponent
+                            fileName: videoModel.videos[index].lastPathComponent,
+                            isActive: index == currentIndex
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .onAppear {
@@ -50,10 +51,7 @@ struct ContentView: View {
                     .ignoresSafeArea()
                 }
                 
-                // 刷新按钮
-                Button(action: {
-                    videoModel.loadVideos()
-                }) {
+                Button(action: { videoModel.loadVideos() }) {
                     Image(systemName: "arrow.clockwise")
                         .padding(12)
                         .background(Color.black.opacity(0.6))
@@ -62,11 +60,8 @@ struct ContentView: View {
                 }
                 .padding()
                 
-                // 删除按钮
                 if !videoModel.videos.isEmpty {
-                    Button(action: {
-                        showDeleteConfirm = true
-                    }) {
+                    Button(action: { showDeleteConfirm = true }) {
                         Image(systemName: "trash")
                             .padding(12)
                             .background(Color.black.opacity(0.6))
@@ -105,7 +100,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - 竖向分页滚动视图（兼容 iOS 15）
+// MARK: - VerticalPagingScrollView 定义（不变）
 struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
     let pageCount: Int
     @Binding var currentPage: Int
