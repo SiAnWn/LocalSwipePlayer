@@ -4,18 +4,13 @@ import UIKit
 class VideoPlayerManager: ObservableObject {
     static let shared = VideoPlayerManager()
     private var player: AVPlayer?
+    private var playerLayer: AVPlayerLayer?
     private var currentURL: URL?
     private var timeObserver: Any?
     
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
     @Published var isPlaying: Bool = false
-    @Published var rate: Float = 1.0
-    
-    // 公开获取 player 的 layer
-    var playerLayer: AVPlayerLayer? {
-        return player?.layer as? AVPlayerLayer
-    }
     
     private init() {
         setupPlayer()
@@ -23,18 +18,16 @@ class VideoPlayerManager: ObservableObject {
     
     private func setupPlayer() {
         player = AVPlayer()
-        player?.rate = rate
+        player?.rate = 1.0
         addTimeObserver()
         
-        // 监听播放结束，实现循环
         NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self = self, let url = self.currentURL else { return }
-            self.seek(to: 0)
-            self.play()
+            self?.seek(to: 0)
+            self?.play()
         }
     }
     
@@ -84,8 +77,16 @@ class VideoPlayerManager: ObservableObject {
         player?.seek(to: CMTime(seconds: time, preferredTimescale: 600))
     }
     
-    func setRate(_ newRate: Float) {
-        rate = newRate
+    func setRate(_ rate: Float) {
         player?.rate = rate
+    }
+    
+    // 获取 player layer，用于添加到视图上
+    func getPlayerLayer() -> AVPlayerLayer? {
+        if playerLayer == nil {
+            playerLayer = AVPlayerLayer(player: player)
+            playerLayer?.videoGravity = .resizeAspectFill
+        }
+        return playerLayer
     }
 }
