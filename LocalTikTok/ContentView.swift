@@ -18,53 +18,26 @@ struct ContentView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
                 if videoModel.videos.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "video.slash")
-                            .font(.largeTitle)
-                        Text("请将视频文件放入应用 Documents 目录")
-                            .multilineTextAlignment(.center)
-                        Button("刷新") {
-                            videoModel.loadVideos()
-                        }
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(8)
-                    }
+                    EmptyView()
                 } else {
-                    // 竖向分页滚动视图（兼容 iOS 15）
+                    // 分页滚动视图
                     VerticalPagingScrollView(
                         pageCount: videoModel.videos.count,
                         currentPage: $currentIndex
                     ) { index in
                         VideoPlayerView(
                             url: videoModel.videos[index],
+                            isActive: index == currentIndex,
                             currentTime: $currentTime,
-                            duration: $duration,
-                            isActive: index == currentIndex
+                            duration: $duration
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .onAppear {
-                            let url = videoModel.videos[index]
-                            // 预加载当前及相邻视频
-                            _ = videoModel.preloadItem(for: url)
-                            if index > 0 {
-                                _ = videoModel.preloadItem(for: videoModel.videos[index-1])
-                            }
-                            if index < videoModel.videos.count - 1 {
-                                _ = videoModel.preloadItem(for: videoModel.videos[index+1])
-                            }
-                            videoModel.cleanupItems(except: url)
-                            videoModel.currentIndex = index
-                            videoModel.savePosition()
-                        }
                     }
                     .ignoresSafeArea()
                     .gesture(
                         DragGesture()
                             .onEnded { value in
-                                // 向上滑动随机跳转
-                                if value.translation.height < -50 {
-                                    guard videoModel.videos.count > 1 else { return }
+                                if value.translation.height < -50 && videoModel.videos.count > 1 {
                                     var randomIndex = Int.random(in: 0..<videoModel.videos.count)
                                     while randomIndex == currentIndex {
                                         randomIndex = Int.random(in: 0..<videoModel.videos.count)
@@ -76,81 +49,27 @@ struct ContentView: View {
                             }
                     )
                     
-                    // 控制栏（进度条 + 时间）
+                    // 控制栏
                     if showControls {
-                        VStack {
-                            Spacer()
-                            VStack(spacing: 8) {
-                                Slider(value: Binding(
-                                    get: { currentTime },
-                                    set: { newValue in
-                                        VideoPlayerManager.shared.seek(to: newValue)
-                                    }
-                                ), in: 0...max(duration, 1))
-                                .accentColor(.white)
-                                .padding(.horizontal, 20)
-                                
-                                HStack {
-                                    Text(formatTime(currentTime))
-                                        .font(.caption)
-                                        .foregroundColor(.white)
-                                    Spacer()
-                                    Text(formatTime(duration))
-                                        .font(.caption)
-                                        .foregroundColor(.white)
-                                }
-                                .padding(.horizontal, 20)
-                            }
-                            .padding(.bottom, 30)
-                            .background(Color.black.opacity(0.5))
-                        }
-                        .transition(.opacity)
+                        ControlBarView(currentTime: $currentTime, duration: duration)
                     }
                     
                     // 文件名浮层
                     if showFileName {
-                        VStack {
-                            Text(videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
-                                .font(.caption)
-                                .padding(8)
-                                .background(Color.black.opacity(0.6))
-                                .cornerRadius(8)
-                                .foregroundColor(.white)
-                                .padding(.top, 50)
-                            Spacer()
-                        }
-                        .transition(.opacity)
+                        FileNameOverlayView(fileName: videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
                     }
                     
                     // 倍速菜单
                     if showSpeedMenu {
-                        VStack(spacing: 12) {
-                            ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { sp in
-                                Button(action: {
-                                    speed = sp
-                                    VideoPlayerManager.shared.setRate(speed)
-                                    showSpeedMenu = false
-                                }) {
-                                    Text("\(sp)x")
-                                        .foregroundColor(.white)
-                                        .padding(.vertical, 8)
-                                        .frame(width: 80)
-                                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
-                                        .cornerRadius(8)
-                                }
-                            }
-                        }
-                        .padding()
-                        .background(Color.black.opacity(0.8))
-                        .cornerRadius(12)
-                        .transition(.scale)
+                        SpeedMenuView(speed: $speed, onSpeedSelected: {
+                            VideoPlayerManager.shared.setRate(speed)
+                            showSpeedMenu = false
+                        }, onClose: { showSpeedMenu = false })
                     }
                 }
                 
                 // 刷新按钮
-                Button(action: {
-                    videoModel.loadVideos()
-                }) {
+                Button(action: { videoModel.loadVideos() }) {
                     Image(systemName: "arrow.clockwise")
                         .padding(12)
                         .background(Color.black.opacity(0.6))
@@ -195,14 +114,11 @@ struct ContentView: View {
                 } else {
                     currentIndex = 0
                 }
-                // 加载第一个视频
                 if let firstURL = videoModel.videos.first {
                     VideoPlayerManager.shared.loadVideo(url: firstURL, autoPlay: true)
                 }
             }
-            .onTapGesture(count: 2) {
-                captureScreenshot()
-            }
+            .onTapGesture(count: 2) { captureScreenshot() }
             .onLongPressGesture(minimumDuration: 0.5) {
                 showSpeedMenu.toggle()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -251,19 +167,98 @@ struct ContentView: View {
                 .first?.windows
                 .first(where: { $0.isKeyWindow })?.rootViewController {
                 rootVC.present(alert, animated: true)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    alert.dismiss(animated: true)
-                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { alert.dismiss(animated: true) }
             }
         } catch {
             print("截图失败: \(error)")
         }
     }
-    
+}
+
+// MARK: - 控制栏子视图
+struct ControlBarView: View {
+    @Binding var currentTime: TimeInterval
+    let duration: TimeInterval
+    var body: some View {
+        VStack {
+            Spacer()
+            VStack(spacing: 8) {
+                Slider(value: Binding(
+                    get: { currentTime },
+                    set: { VideoPlayerManager.shared.seek(to: $0) }
+                ), in: 0...max(duration, 1))
+                .accentColor(.white)
+                .padding(.horizontal, 20)
+                
+                HStack {
+                    Text(formatTime(currentTime)).font(.caption).foregroundColor(.white)
+                    Spacer()
+                    Text(formatTime(duration)).font(.caption).foregroundColor(.white)
+                }
+                .padding(.horizontal, 20)
+            }
+            .padding(.bottom, 30)
+            .background(Color.black.opacity(0.5))
+        }
+        .transition(.opacity)
+    }
     private func formatTime(_ seconds: TimeInterval) -> String {
         if seconds.isNaN || seconds.isInfinite { return "00:00" }
         let total = Int(seconds)
         return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+}
+
+// MARK: - 文件名浮层子视图
+struct FileNameOverlayView: View {
+    let fileName: String
+    var body: some View {
+        VStack {
+            Text(fileName)
+                .font(.caption)
+                .padding(8)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(8)
+                .foregroundColor(.white)
+                .padding(.top, 50)
+            Spacer()
+        }
+        .transition(.opacity)
+    }
+}
+
+// MARK: - 倍速菜单子视图
+struct SpeedMenuView: View {
+    @Binding var speed: Float
+    let onSpeedSelected: () -> Void
+    let onClose: () -> Void
+    let speeds: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            ForEach(speeds, id: \.self) { sp in
+                Button(action: {
+                    speed = sp
+                    onSpeedSelected()
+                }) {
+                    Text("\(sp)x")
+                        .foregroundColor(.white)
+                        .padding(.vertical, 8)
+                        .frame(width: 80)
+                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
+                        .cornerRadius(8)
+                }
+            }
+        }
+        .padding()
+        .background(Color.black.opacity(0.8))
+        .cornerRadius(12)
+        .transition(.scale)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                withAnimation { onClose() }
+            }
+        }
     }
 }
 
