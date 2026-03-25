@@ -61,7 +61,7 @@ struct ContentView: View {
                 }
                 .padding()
                 
-                // 左下角删除按钮（长按显示）
+                // 左下角删除按钮（点击显示确认）
                 if !videoModel.videos.isEmpty {
                     Button(action: {
                         showDeleteConfirm = true
