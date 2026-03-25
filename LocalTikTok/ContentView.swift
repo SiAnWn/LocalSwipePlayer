@@ -29,8 +29,7 @@ struct ContentView: View {
                     ) { index in
                         VideoPlayerView(
                             videoURL: videoModel.videos[index],
-                            fileName: videoModel.videos[index].lastPathComponent,
-                            isActive: index == currentIndex
+                            fileName: videoModel.videos[index].lastPathComponent
                         )
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .onAppear {
