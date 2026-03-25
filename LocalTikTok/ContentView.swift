@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var videoModel = VideoModel()
+    @EnvironmentObject var videoModel: VideoModel
     @State private var currentIndex: Int = 0
     @State private var showDeleteConfirm = false
     
