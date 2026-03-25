@@ -7,6 +7,7 @@ struct VideoPlayerView: View {
     let videoURL: URL
     let playerItem: AVPlayerItem?
     let fileName: String
+    @EnvironmentObject var videoModel: VideoModel
     @State private var player: AVPlayer?
     @State private var isPlaying = false
     @State private var currentTime: TimeInterval = 0
