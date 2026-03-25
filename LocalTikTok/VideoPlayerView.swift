@@ -12,6 +12,7 @@ struct VideoPlayerView: View {
     @State private var showControls = false
     @State private var hideControlsWorkItem: DispatchWorkItem?
     @State private var timeObserver: Any?
+    @State private var loopEnabled = true
 
     var body: some View {
         GeometryReader { geometry in
@@ -21,7 +22,7 @@ struct VideoPlayerView: View {
                         .onAppear {
                             startTimeObserver()
                             if isActive {
-                                // 跳转到记忆位置（仅当是当前视频）
+                                // 跳转记忆位置
                                 if videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
                                     let saved = videoModel.currentTime
                                     if saved > 0 && saved < duration {
@@ -46,7 +47,7 @@ struct VideoPlayerView: View {
                         }
                 }
 
-                // 进度条控制层
+                // 进度条（单击显示，2秒后隐藏）
                 if showControls {
                     VStack {
                         Spacer()
@@ -58,7 +59,6 @@ struct VideoPlayerView: View {
                                 }
                             ), in: 0...max(duration, 1))
                             .accentColor(.white)
-
                             HStack {
                                 Text(formatTime(currentTime))
                                     .font(.caption)
@@ -82,14 +82,10 @@ struct VideoPlayerView: View {
             }
         }
         .onChange(of: isActive) { newValue in
-            if let player = player {
-                if newValue {
-                    // 激活时播放，并确保播放速率（默认1.0）
-                    player.rate = 1.0
-                    player.play()
-                } else {
-                    player.pause()
-                }
+            if newValue {
+                player?.play()
+            } else {
+                player?.pause()
             }
         }
     }
@@ -111,9 +107,11 @@ struct VideoPlayerView: View {
             object: player?.currentItem,
             queue: .main
         ) { _ in
-            player?.seek(to: .zero)
-            if isActive {
-                player?.play()
+            if loopEnabled {
+                player?.seek(to: .zero)
+                if isActive {
+                    player?.play()
+                }
             }
         }
 
@@ -160,7 +158,6 @@ struct VideoPlayerView: View {
 
 struct VideoPlayerController: UIViewControllerRepresentable {
     let player: AVPlayer
-
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
@@ -168,6 +165,5 @@ struct VideoPlayerController: UIViewControllerRepresentable {
         controller.videoGravity = .resizeAspectFill
         return controller
     }
-
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {}
 }
