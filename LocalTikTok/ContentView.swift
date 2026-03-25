@@ -35,7 +35,6 @@ struct ContentView: View {
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .onAppear {
                             let url = videoModel.videos[index]
-                            // 预加载当前及相邻视频
                             _ = videoModel.preloadItem(for: url)
                             if index > 0 {
                                 _ = videoModel.preloadItem(for: videoModel.videos[index-1])
@@ -51,10 +50,7 @@ struct ContentView: View {
                     .ignoresSafeArea()
                 }
                 
-                // 刷新按钮
-                Button(action: {
-                    videoModel.loadVideos()
-                }) {
+                Button(action: { videoModel.loadVideos() }) {
                     Image(systemName: "arrow.clockwise")
                         .padding(12)
                         .background(Color.black.opacity(0.6))
@@ -63,11 +59,8 @@ struct ContentView: View {
                 }
                 .padding()
                 
-                // 删除按钮
                 if !videoModel.videos.isEmpty {
-                    Button(action: {
-                        showDeleteConfirm = true
-                    }) {
+                    Button(action: { showDeleteConfirm = true }) {
                         Image(systemName: "trash")
                             .padding(12)
                             .background(Color.black.opacity(0.6))
@@ -106,7 +99,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - 竖向分页滚动视图（兼容 iOS 15，支持向上滑动随机播放）
+// MARK: - 竖向分页滚动视图（支持向上滑动随机播放）
 struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
     let pageCount: Int
     @Binding var currentPage: Int
@@ -173,13 +166,13 @@ struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
             guard !isRandomJumping else { return }
             let currentPageAfterScroll = Int(scrollView.contentOffset.y / scrollView.bounds.height)
-            // 向上滑动（页码减少）
+
+            // 向上滑动（页码减小）则随机跳转
             if currentPageAfterScroll < lastPage {
+                guard parent.pageCount > 1 else { return }
                 var randomPage = Int.random(in: 0..<parent.pageCount)
-                if parent.pageCount > 1 {
-                    while randomPage == currentPageAfterScroll {
-                        randomPage = Int.random(in: 0..<parent.pageCount)
-                    }
+                while randomPage == currentPageAfterScroll {
+                    randomPage = Int.random(in: 0..<parent.pageCount)
                 }
                 isRandomJumping = true
                 parent.currentPage = randomPage
@@ -197,11 +190,10 @@ struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
             if !decelerate {
                 let currentPageAfterScroll = Int(scrollView.contentOffset.y / scrollView.bounds.height)
                 if currentPageAfterScroll < lastPage {
+                    guard parent.pageCount > 1 else { return }
                     var randomPage = Int.random(in: 0..<parent.pageCount)
-                    if parent.pageCount > 1 {
-                        while randomPage == currentPageAfterScroll {
-                            randomPage = Int.random(in: 0..<parent.pageCount)
-                        }
+                    while randomPage == currentPageAfterScroll {
+                        randomPage = Int.random(in: 0..<parent.pageCount)
                     }
                     isRandomJumping = true
                     parent.currentPage = randomPage
