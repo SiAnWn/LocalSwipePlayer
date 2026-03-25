@@ -8,10 +8,11 @@ struct VideoPlayerView: View {
     let videoURL: URL
     let playerItem: AVPlayerItem?
     let fileName: String
+    let isActive: Bool                     // 是否为当前活跃页
+
     @EnvironmentObject var videoModel: VideoModel
 
     @State private var player: AVPlayer?
-    @State private var isPlaying = false
     @State private var currentTime: TimeInterval = 0
     @State private var duration: TimeInterval = 0
     @State private var showControls = false
@@ -33,24 +34,34 @@ struct VideoPlayerView: View {
         GeometryReader { geometry in
             ZStack {
                 // 播放器层
-                PlayerLayerView(player: player, currentTime: $currentTime, duration: $duration, videoModel: videoModel, videoURL: videoURL)
-                    .onAppear {
-                        setupPlayer()
-                        startTimeObserver()
-                        // 跳转到记忆位置
-                        if videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
-                            let saved = videoModel.currentTime
-                            if saved > 0 && saved < duration {
-                                player?.seek(to: CMTime(seconds: saved, preferredTimescale: 600))
+                if let player = player {
+                    VideoPlayerController(player: player)
+                        .onAppear {
+                            // 只有在激活状态时才播放
+                            if isActive {
+                                player.play()
+                            }
+                            startTimeObserver()
+                            // 跳转到记忆位置（仅激活时）
+                            if isActive && videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
+                                let saved = videoModel.currentTime
+                                if saved > 0 && saved < duration {
+                                    player.seek(to: CMTime(seconds: saved, preferredTimescale: 600))
+                                }
                             }
                         }
-                    }
-                    .onDisappear {
-                        player?.pause()
-                        removeTimeObserver()
-                        videoModel.currentTime = currentTime
-                        videoModel.savePosition()
-                    }
+                        .onDisappear {
+                            player.pause()
+                            removeTimeObserver()
+                            videoModel.currentTime = currentTime
+                            videoModel.savePosition()
+                        }
+                } else {
+                    Color.black
+                        .onAppear {
+                            setupPlayer()
+                        }
+                }
 
                 // 控制栏（进度条 + 时间）
                 if showControls {
@@ -77,6 +88,19 @@ struct VideoPlayerView: View {
             .onTapGesture {
                 toggleControls()
                 showFileNameBriefly()
+            }
+        }
+        // 监听激活状态变化，控制播放/暂停
+        .onChange(of: isActive) { newValue in
+            if newValue {
+                // 变为激活状态时，如果播放器存在且未播放，则开始播放
+                if let player = player, player.rate == 0 {
+                    player.play()
+                }
+                // 如果播放器尚未初始化，等待 setupPlayer 完成（已在 onAppear 中处理）
+            } else {
+                // 非激活状态，暂停
+                player?.pause()
             }
         }
     }
@@ -209,29 +233,6 @@ struct VideoPlayerView: View {
                 isAdjustingBrightness = false
                 isAdjustingVolume = false
             }
-    }
-}
-
-// MARK: - 子视图：播放器层
-struct PlayerLayerView: View {
-    let player: AVPlayer?
-    @Binding var currentTime: TimeInterval
-    @Binding var duration: TimeInterval
-    let videoModel: VideoModel
-    let videoURL: URL
-
-    var body: some View {
-        if let player = player {
-            VideoPlayerController(player: player)
-                .onAppear {
-                    player.play()
-                }
-                .onDisappear {
-                    player.pause()
-                }
-        } else {
-            Color.black
-        }
     }
 }
 
