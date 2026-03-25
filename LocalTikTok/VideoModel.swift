@@ -8,6 +8,7 @@ class VideoModel: ObservableObject {
     @Published var currentTime: TimeInterval = 0
     
     private var playerItems: [URL: AVPlayerItem] = [:]
+    // 支持的小写扩展名
     let supportedExtensions = ["mp4", "mov", "m4v", "avi", "mkv", "flv", "3gp", "webm"]
     private let lastIndexKey = "lastVideoIndex"
     private let lastTimeKey = "lastVideoTime"
@@ -19,17 +20,29 @@ class VideoModel: ObservableObject {
     
     func loadVideos() {
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        // 调试：打印 Documents 路径（可在 Xcode 控制台查看）
+        print("Documents 路径: \(documentsPath.path)")
+        
         do {
             let allFiles = try FileManager.default.contentsOfDirectory(at: documentsPath, includingPropertiesForKeys: nil)
-            let videoFiles = allFiles.filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
+            print("所有文件: \(allFiles.map { $0.lastPathComponent })")  // 调试
+            
+            // 不区分大小写匹配扩展名
+            let videoFiles = allFiles.filter { url in
+                let ext = url.pathExtension.lowercased()
+                return supportedExtensions.contains(ext)
+            }
             DispatchQueue.main.async {
                 self.videos = videoFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }
                 self.playerItems.removeAll()
                 if self.currentIndex >= self.videos.count {
                     self.currentIndex = max(0, self.videos.count - 1)
                 }
+                // 调试：打印找到的视频文件
+                print("找到视频: \(self.videos.map { $0.lastPathComponent })")
             }
         } catch {
+            print("读取目录失败: \(error)")
             DispatchQueue.main.async { self.videos = [] }
         }
     }
