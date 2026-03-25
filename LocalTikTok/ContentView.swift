@@ -1,97 +1,51 @@
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var videoModel: VideoModel
+    @StateObject private var videoModel = VideoModel()  // 注意：改为 @StateObject
     @State private var currentIndex: Int = 0
-    @State private var showDeleteConfirm = false
-
+    
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .topTrailing) {
-                if videoModel.videos.isEmpty {
-                    VStack(spacing: 20) {
-                        Image(systemName: "video.slash")
-                            .font(.largeTitle)
-                        Text("请将视频文件放入应用 Documents 目录")
-                            .multilineTextAlignment(.center)
-                        Button("刷新") {
-                            videoModel.loadVideos()
+            if videoModel.videos.isEmpty {
+                VStack(spacing: 20) {
+                    Image(systemName: "video.slash")
+                        .font(.largeTitle)
+                    Text("请将视频文件放入应用 Documents 目录")
+                        .multilineTextAlignment(.center)
+                    Button("刷新") {
+                        videoModel.loadVideos()
+                    }
+                    .padding()
+                    .background(Color.blue)
+                    .cornerRadius(8)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VerticalPagingScrollView(
+                    pageCount: videoModel.videos.count,
+                    currentPage: $currentIndex
+                ) { index in
+                    VideoPlayerView(
+                        videoURL: videoModel.videos[index],
+                        fileName: videoModel.videos[index].lastPathComponent
+                    )
+                    .environmentObject(videoModel)  // 传递环境对象
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .onAppear {
+                        // 更新全局索引
+                        videoModel.currentIndex = index
+                        // 预加载相邻视频
+                        _ = videoModel.preloadItem(for: videoModel.videos[index])
+                        if index > 0 {
+                            _ = videoModel.preloadItem(for: videoModel.videos[index-1])
                         }
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(8)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    VerticalPagingScrollView(
-                        pageCount: videoModel.videos.count,
-                        currentPage: $currentIndex
-                    ) { index in
-                        VideoPlayerView(
-                            videoURL: videoModel.videos[index],
-                            isActive: index == currentIndex
-                        )
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .onAppear {
-                            let url = videoModel.videos[index]
-                            // 预加载当前及相邻视频
-                            _ = videoModel.preloadItem(for: url)
-                            if index > 0 {
-                                _ = videoModel.preloadItem(for: videoModel.videos[index-1])
-                            }
-                            if index < videoModel.videos.count - 1 {
-                                _ = videoModel.preloadItem(for: videoModel.videos[index+1])
-                            }
-                            videoModel.cleanupItems(except: url)
-                            videoModel.currentIndex = index
-                            videoModel.savePosition()
+                        if index < videoModel.videos.count - 1 {
+                            _ = videoModel.preloadItem(for: videoModel.videos[index+1])
                         }
-                    }
-                    .ignoresSafeArea()
-                }
-
-                // 刷新按钮
-                Button(action: {
-                    videoModel.loadVideos()
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .padding(12)
-                        .background(Color.black.opacity(0.6))
-                        .clipShape(Circle())
-                        .foregroundColor(.white)
-                }
-                .padding()
-
-                // 删除按钮
-                if !videoModel.videos.isEmpty {
-                    Button(action: {
-                        showDeleteConfirm = true
-                    }) {
-                        Image(systemName: "trash")
-                            .padding(12)
-                            .background(Color.black.opacity(0.6))
-                            .clipShape(Circle())
-                            .foregroundColor(.white)
-                    }
-                    .padding(.leading, 20)
-                    .padding(.bottom, 20)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                    .alert(isPresented: $showDeleteConfirm) {
-                        Alert(
-                            title: Text("删除视频"),
-                            message: Text("确定要删除当前视频吗？"),
-                            primaryButton: .destructive(Text("删除")) {
-                                videoModel.deleteVideo(at: currentIndex)
-                                if videoModel.videos.isEmpty {
-                                    currentIndex = 0
-                                } else if currentIndex >= videoModel.videos.count {
-                                    currentIndex = videoModel.videos.count - 1
-                                }
-                            },
-                            secondaryButton: .cancel()
-                        )
+                        videoModel.cleanupItems(except: videoModel.videos[index])
                     }
                 }
+                .ignoresSafeArea()
             }
         }
         .onAppear {
@@ -100,6 +54,7 @@ struct ContentView: View {
                 currentIndex = videoModel.currentIndex
             } else {
                 currentIndex = 0
+                videoModel.currentIndex = 0
             }
         }
     }
