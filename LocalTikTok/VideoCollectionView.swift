@@ -24,10 +24,15 @@ struct VideoCollectionView: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: UICollectionView, context: Context) {
-        if uiView.contentOffset.y != CGFloat(currentIndex) * uiView.bounds.height {
-            uiView.setContentOffset(CGPoint(x: 0, y: CGFloat(currentIndex) * uiView.bounds.height), animated: false)
+        // 同步 contentOffset
+        let targetOffset = CGFloat(currentIndex) * uiView.bounds.height
+        if abs(uiView.contentOffset.y - targetOffset) > 0.1 {
+            uiView.setContentOffset(CGPoint(x: 0, y: targetOffset), animated: false)
         }
         context.coordinator.parent = self
+        
+        // 每次更新时，确保当前 cell 上的播放器 layer 正确
+        context.coordinator.attachPlayerLayerToCurrentCell(collectionView: uiView)
     }
     
     func makeCoordinator() -> Coordinator {
@@ -47,9 +52,22 @@ struct VideoCollectionView: UIViewRepresentable {
         
         func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "VideoCell", for: indexPath) as! VideoCell
-            let url = parent.videos[indexPath.item]
-            cell.configure(with: url)
             return cell
+        }
+        
+        // 将播放器 layer 附加到当前显示的 cell 上
+        func attachPlayerLayerToCurrentCell(collectionView: UICollectionView) {
+            let visibleCells = collectionView.visibleCells
+            guard let currentCell = visibleCells.first(where: { collectionView.indexPath(for: $0)?.item == parent.currentIndex }) as? VideoCell else {
+                return
+            }
+            // 从所有 cell 移除播放器 layer
+            for cell in visibleCells {
+                (cell as? VideoCell)?.removePlayerLayer()
+            }
+            // 获取播放器 layer
+            guard let playerLayer = VideoPlayerManager.shared.playerLayer else { return }
+            currentCell.addPlayerLayer(playerLayer)
         }
         
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
@@ -59,6 +77,7 @@ struct VideoCollectionView: UIViewRepresentable {
                 let newURL = parent.videos[page]
                 parent.onVideoChanged(newURL)
             }
+            attachPlayerLayerToCurrentCell(collectionView: scrollView as! UICollectionView)
         }
         
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
@@ -69,15 +88,13 @@ struct VideoCollectionView: UIViewRepresentable {
                     let newURL = parent.videos[page]
                     parent.onVideoChanged(newURL)
                 }
+                attachPlayerLayerToCurrentCell(collectionView: scrollView as! UICollectionView)
             }
         }
     }
 }
 
 class VideoCell: UICollectionViewCell {
-    private var playerView: UIView? // 用于承载 AVPlayerLayer
-    private var url: URL?
-    
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .black
@@ -87,32 +104,20 @@ class VideoCell: UICollectionViewCell {
         fatalError("init(coder:) has not been implemented")
     }
     
-    func configure(with url: URL) {
-        self.url = url
-        // 不需要在这里创建播放器，只显示占位黑色背景即可
-        // 播放器由全局单例管理，我们只需要在 Cell 上显示播放器的 layer
-        setupPlayerLayer()
+    func removePlayerLayer() {
+        layer.sublayers?.forEach { $0.removeFromSuperlayer() }
     }
     
-    private func setupPlayerLayer() {
-        guard let playerLayer = VideoPlayerManager.shared.player?.currentItem?.asset as? AVURLAsset,
-              playerLayer.url == url else {
-            // 如果当前全局播放器不是播放这个 URL，先移除 layer
-            playerView?.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
-            return
-        }
-        // 将播放器的 layer 添加到 cell 上
-        let playerLayer = VideoPlayerManager.shared.player?.currentItem?.asset as? AVURLAsset
-        guard let layer = VideoPlayerManager.shared.player?.layer as? AVPlayerLayer else { return }
-        layer.frame = contentView.bounds
-        contentView.layer.addSublayer(layer)
+    func addPlayerLayer(_ playerLayer: AVPlayerLayer) {
+        removePlayerLayer()
+        playerLayer.frame = bounds
+        layer.addSublayer(playerLayer)
     }
     
     override func layoutSubviews() {
         super.layoutSubviews()
-        // 确保 layer 的 frame 适应 cell 大小
-        if let playerLayer = VideoPlayerManager.shared.player?.layer as? AVPlayerLayer {
-            playerLayer.frame = contentView.bounds
+        if let playerLayer = layer.sublayers?.first(where: { $0 is AVPlayerLayer }) as? AVPlayerLayer {
+            playerLayer.frame = bounds
         }
     }
 }
