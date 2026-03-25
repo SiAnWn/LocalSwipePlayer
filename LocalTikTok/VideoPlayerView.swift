@@ -45,162 +45,150 @@ struct VideoPlayerView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // 播放器层
-                if let player = player {
-                    VideoPlayerController(player: player)
-                        .onAppear {
-                            player.play()
-                            isPlaying = true
-                            startTimeObserver()
-                            // 尝试跳转到记忆位置
-                            if videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
-                                let savedTime = videoModel.currentTime
-                                if savedTime > 0 && savedTime < duration {
-                                    player.seek(to: CMTime(seconds: savedTime, preferredTimescale: 600))
-                                }
-                            }
-                        }
-                        .onDisappear {
-                            player.pause()
-                            isPlaying = false
-                            removeTimeObserver()
-                            // 保存当前进度
-                            videoModel.currentTime = currentTime
-                            videoModel.savePosition()
-                        }
-                } else {
-                    Color.black
-                        .onAppear {
-                            setupPlayer()
-                        }
-                }
-                
-                // 控制层（进度条、时间）
-                if showControls {
-                    VStack {
-                        Spacer()
-                        VStack(spacing: 8) {
-                            Slider(value: Binding(
-                                get: { currentTime },
-                                set: { newValue in
-                                    seek(to: newValue)
-                                }
-                            ), in: 0...max(duration, 1))
-                            .accentColor(.white)
-                            .padding(.horizontal, 20)
-                            
-                            HStack {
-                                Text(formatTime(currentTime))
-                                    .font(.caption)
-                                    .foregroundColor(.white)
-                                Spacer()
-                                Text(formatTime(duration))
-                                    .font(.caption)
-                                    .foregroundColor(.white)
-                            }
-                            .padding(.horizontal, 20)
-                        }
-                        .padding(.bottom, 30)
-                        .background(Color.black.opacity(0.5))
-                    }
-                    .transition(.opacity)
-                }
-                
-                // 文件名短暂显示
-                if showFileName {
-                    VStack {
-                        Text(fileName)
-                            .font(.caption)
-                            .padding(8)
-                            .background(Color.black.opacity(0.6))
-                            .cornerRadius(8)
-                            .foregroundColor(.white)
-                            .padding(.top, 50)
-                        Spacer()
-                    }
-                    .transition(.opacity)
-                }
-                
-                // 倍速菜单
-                if showSpeedMenu {
-                    VStack(spacing: 12) {
-                        ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { sp in
-                            Button(action: {
-                                setSpeed(sp)
-                                showSpeedMenu = false
-                            }) {
-                                Text("\(sp)x")
-                                    .foregroundColor(.white)
-                                    .padding(.vertical, 8)
-                                    .frame(width: 80)
-                                    .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
-                                    .cornerRadius(8)
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(Color.black.opacity(0.8))
-                    .cornerRadius(12)
-                    .transition(.scale)
-                }
+                playerLayer
+                if showControls { controlsView }
+                if showFileName { fileNameView }
+                if showSpeedMenu { speedMenuView }
             }
             .ignoresSafeArea()
-            // 双击截图
-            .onTapGesture(count: 2) {
-                captureScreenshot()
-            }
-            // 长按显示倍速菜单
-            .onLongPressGesture(minimumDuration: 0.5) {
-                withAnimation {
-                    showSpeedMenu.toggle()
-                }
-                // 2秒后自动关闭菜单
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    withAnimation {
-                        showSpeedMenu = false
-                    }
-                }
-            }
-            // 单指拖拽调节亮度/音量
-            .gesture(
-                DragGesture(minimumDistance: 10)
-                    .onChanged { value in
-                        let screenWidth = geometry.size.width
-                        let isLeft = value.startLocation.x < screenWidth / 2
-                        let deltaY = value.translation.height / screenWidth // 归一化
-                        
-                        if !isAdjustingBrightness && !isAdjustingVolume {
-                            if isLeft {
-                                isAdjustingBrightness = true
-                                startBrightness = UIScreen.main.brightness
-                            } else {
-                                isAdjustingVolume = true
-                                startVolume = AVAudioSession.sharedInstance().outputVolume
-                            }
-                        }
-                        
-                        if isAdjustingBrightness {
-                            let newBrightness = startBrightness - deltaY
-                            UIScreen.main.brightness = min(max(newBrightness, 0), 1)
-                        } else if isAdjustingVolume {
-                            let newVolume = startVolume - Float(deltaY)
-                            let volumeView = MPVolumeView()
-                            if let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider {
-                                slider.value = min(max(newVolume, 0), 1)
+            .onTapGesture(count: 2) { captureScreenshot() }
+            .onLongPressGesture(minimumDuration: 0.5) { showSpeedMenu.toggle(); autoHideSpeedMenu() }
+            .gesture(dragGesture(geometry: geometry))
+            .onTapGesture { toggleControls(); showFileNameBriefly() }
+        }
+    }
+    
+    // MARK: - 播放器层
+    private var playerLayer: some View {
+        Group {
+            if let player = player {
+                VideoPlayerController(player: player)
+                    .onAppear {
+                        player.play()
+                        isPlaying = true
+                        startTimeObserver()
+                        // 尝试跳转到记忆位置
+                        if videoModel.currentIndex == (videoModel.videos.firstIndex(of: videoURL) ?? -1) {
+                            let savedTime = videoModel.currentTime
+                            if savedTime > 0 && savedTime < duration {
+                                player.seek(to: CMTime(seconds: savedTime, preferredTimescale: 600))
                             }
                         }
                     }
-                    .onEnded { _ in
-                        isAdjustingBrightness = false
-                        isAdjustingVolume = false
+                    .onDisappear {
+                        player.pause()
+                        isPlaying = false
+                        removeTimeObserver()
+                        videoModel.currentTime = currentTime
+                        videoModel.savePosition()
                     }
-            )
-            // 单击显示/隐藏进度条和文件名
-            .onTapGesture {
-                toggleControls()
-                showFileNameBriefly()
+            } else {
+                Color.black
+                    .onAppear { setupPlayer() }
             }
         }
+    }
+    
+    // MARK: - 控制栏视图
+    private var controlsView: some View {
+        VStack {
+            Spacer()
+            VStack(spacing: 8) {
+                Slider(value: Binding(
+                    get: { currentTime },
+                    set: { seek(to: $0) }
+                ), in: 0...max(duration, 1))
+                .accentColor(.white)
+                .padding(.horizontal, 20)
+                
+                HStack {
+                    Text(formatTime(currentTime))
+                        .font(.caption)
+                        .foregroundColor(.white)
+                    Spacer()
+                    Text(formatTime(duration))
+                        .font(.caption)
+                        .foregroundColor(.white)
+                }
+                .padding(.horizontal, 20)
+            }
+            .padding(.bottom, 30)
+            .background(Color.black.opacity(0.5))
+        }
+        .transition(.opacity)
+    }
+    
+    // MARK: - 文件名显示视图
+    private var fileNameView: some View {
+        VStack {
+            Text(fileName)
+                .font(.caption)
+                .padding(8)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(8)
+                .foregroundColor(.white)
+                .padding(.top, 50)
+            Spacer()
+        }
+        .transition(.opacity)
+    }
+    
+    // MARK: - 倍速菜单视图
+    private var speedMenuView: some View {
+        VStack(spacing: 12) {
+            ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { sp in
+                Button(action: {
+                    setSpeed(sp)
+                    showSpeedMenu = false
+                }) {
+                    Text("\(sp)x")
+                        .foregroundColor(.white)
+                        .padding(.vertical, 8)
+                        .frame(width: 80)
+                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
+                        .cornerRadius(8)
+                }
+            }
+        }
+        .padding()
+        .background(Color.black.opacity(0.8))
+        .cornerRadius(12)
+        .transition(.scale)
+    }
+    
+    // MARK: - 手势
+    private func dragGesture(geometry: GeometryProxy) -> some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                let screenWidth = geometry.size.width
+                let isLeft = value.startLocation.x < screenWidth / 2
+                let deltaY = value.translation.height / screenWidth
+                
+                if !isAdjustingBrightness && !isAdjustingVolume {
+                    if isLeft {
+                        isAdjustingBrightness = true
+                        startBrightness = UIScreen.main.brightness
+                    } else {
+                        isAdjustingVolume = true
+                        startVolume = AVAudioSession.sharedInstance().outputVolume
+                    }
+                }
+                
+                if isAdjustingBrightness {
+                    let newBrightness = startBrightness - deltaY
+                    UIScreen.main.brightness = min(max(newBrightness, 0), 1)
+                } else if isAdjustingVolume {
+                    let newVolume = startVolume - Float(deltaY)
+                    let volumeView = MPVolumeView()
+                    if let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider {
+                        slider.value = min(max(newVolume, 0), 1)
+                    }
+                }
+            }
+            .onEnded { _ in
+                isAdjustingBrightness = false
+                isAdjustingVolume = false
+            }
     }
     
     // MARK: - 播放器设置
@@ -257,13 +245,9 @@ struct VideoPlayerView: View {
     // MARK: - 控制栏
     private func toggleControls() {
         hideControlsWorkItem?.cancel()
-        withAnimation(.easeInOut(duration: 0.2)) {
-            showControls = true
-        }
+        withAnimation(.easeInOut(duration: 0.2)) { showControls = true }
         let work = DispatchWorkItem {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                showControls = false
-            }
+            withAnimation(.easeInOut(duration: 0.2)) { showControls = false }
         }
         hideControlsWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
@@ -271,16 +255,18 @@ struct VideoPlayerView: View {
     
     private func showFileNameBriefly() {
         fileNameWorkItem?.cancel()
-        withAnimation(.easeInOut(duration: 0.2)) {
-            showFileName = true
-        }
+        withAnimation(.easeInOut(duration: 0.2)) { showFileName = true }
         let work = DispatchWorkItem {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                showFileName = false
-            }
+            withAnimation(.easeInOut(duration: 0.2)) { showFileName = false }
         }
         fileNameWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+    
+    private func autoHideSpeedMenu() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation { showSpeedMenu = false }
+        }
     }
     
     // MARK: - 截图
@@ -299,11 +285,14 @@ struct VideoPlayerView: View {
             let cgImage = try generator.copyCGImage(at: currentTime, actualTime: nil)
             let image = UIImage(cgImage: cgImage)
             UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-            // 简单提示
-            let alert = UIAlertController(title: nil, message: "截图已保存", preferredStyle: .alert)
-            UIApplication.shared.windows.first?.rootViewController?.present(alert, animated: true)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                alert.dismiss(animated: true)
+            // 获取当前场景的根控制器
+            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let rootVC = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+                let alert = UIAlertController(title: nil, message: "截图已保存", preferredStyle: .alert)
+                rootVC.present(alert, animated: true)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    alert.dismiss(animated: true)
+                }
             }
         } catch {
             print("截图失败: \(error)")
