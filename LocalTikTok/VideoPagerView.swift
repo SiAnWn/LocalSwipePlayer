@@ -23,12 +23,15 @@ struct VideoPagerView: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ pageVC: UIPageViewController, context: Context) {
-        // 当外部 currentIndex 改变时（如删除视频或随机跳转），同步滚动
+        // 当外部 currentIndex 改变时，同步滚动（禁用动画，避免闪烁）
         if let currentVC = pageVC.viewControllers?.first as? VideoPageViewController,
            currentVC.videoURL != videoURLs[currentIndex] {
             let newVC = VideoPageViewController(videoURL: videoURLs[currentIndex])
-            // 根据方向决定动画方向，但为了平滑，统一使用 .forward 并禁用动画（避免闪烁）
+            // 禁用隐式动画
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             pageVC.setViewControllers([newVC], direction: .forward, animated: false)
+            CATransaction.commit()
             context.coordinator.lastIndex = currentIndex
         }
     }
@@ -54,7 +57,7 @@ struct VideoPagerView: UIViewControllerRepresentable {
             return VideoPageViewController(videoURL: parent.videoURLs[index + 1])
         }
         
-        // 向上滑动：返回上一个视频（作为过渡，实际在 didFinishAnimating 中会随机跳转）
+        // 向上滑动：返回上一个视频（作为过渡）
         func pageViewController(_ pageViewController: UIPageViewController, viewControllerBefore viewController: UIViewController) -> UIViewController? {
             guard let currentVC = viewController as? VideoPageViewController,
                   let index = parent.videoURLs.firstIndex(of: currentVC.videoURL),
@@ -76,7 +79,6 @@ struct VideoPagerView: UIViewControllerRepresentable {
                   let currentVC = pageViewController.viewControllers?.first as? VideoPageViewController,
                   let newIndex = parent.videoURLs.firstIndex(of: currentVC.videoURL) else { return }
             
-            // 避免递归
             guard !isRandomJumping else { return }
             
             // 判断向上滑动（新索引 < 旧索引）
@@ -87,11 +89,17 @@ struct VideoPagerView: UIViewControllerRepresentable {
                     randomIndex = Int.random(in: 0..<parent.videoURLs.count)
                 }
                 isRandomJumping = true
-                // 通过修改 currentIndex 触发 updateUIViewController 跳转，避免手动调用 setViewControllers 导致冲突
-                parent.currentIndex = randomIndex
-                isRandomJumping = false
+                // 延迟一小段时间，让当前滑动动画完全结束，再跳转，避免闪烁
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    // 禁用动画进行跳转
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    self.parent.currentIndex = randomIndex
+                    CATransaction.commit()
+                    self.isRandomJumping = false
+                }
             } else {
-                // 向下滑动或未变，正常更新 currentIndex
+                // 向下滑动或未变，正常更新
                 parent.currentIndex = newIndex
             }
             lastIndex = parent.currentIndex
@@ -99,7 +107,7 @@ struct VideoPagerView: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - 视频页面视图控制器（与你之前版本完全相同）
+// MARK: - 视频页面视图控制器（保持不变）
 class VideoPageViewController: UIViewController {
     let videoURL: URL
     private var playerViewController: AVPlayerViewController?
