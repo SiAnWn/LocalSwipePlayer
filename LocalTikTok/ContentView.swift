@@ -37,6 +37,7 @@ struct ContentView: View {
                     .gesture(
                         DragGesture()
                             .onEnded { value in
+                                // 向上滑动随机跳转
                                 if value.translation.height < -50 && videoModel.videos.count > 1 {
                                     var randomIndex = Int.random(in: 0..<videoModel.videos.count)
                                     while randomIndex == currentIndex {
@@ -49,22 +50,73 @@ struct ContentView: View {
                             }
                     )
                     
-                    // 控制栏
+                    // 控制栏（进度条 + 时间）
                     if showControls {
-                        ControlBarView(currentTime: $currentTime, duration: duration)
+                        VStack {
+                            Spacer()
+                            VStack(spacing: 8) {
+                                Slider(value: Binding(
+                                    get: { currentTime },
+                                    set: { VideoPlayerManager.shared.seek(to: $0) }
+                                ), in: 0...max(duration, 1))
+                                .accentColor(.white)
+                                .padding(.horizontal, 20)
+                                
+                                HStack {
+                                    Text(formatTime(currentTime)).font(.caption).foregroundColor(.white)
+                                    Spacer()
+                                    Text(formatTime(duration)).font(.caption).foregroundColor(.white)
+                                }
+                                .padding(.horizontal, 20)
+                            }
+                            .padding(.bottom, 30)
+                            .background(Color.black.opacity(0.5))
+                        }
+                        .transition(.opacity)
                     }
                     
                     // 文件名浮层
                     if showFileName {
-                        FileNameOverlayView(fileName: videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
+                        VStack {
+                            Text(videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
+                                .font(.caption)
+                                .padding(8)
+                                .background(Color.black.opacity(0.6))
+                                .cornerRadius(8)
+                                .foregroundColor(.white)
+                                .padding(.top, 50)
+                            Spacer()
+                        }
+                        .transition(.opacity)
                     }
                     
                     // 倍速菜单
                     if showSpeedMenu {
-                        SpeedMenuView(speed: $speed, onSpeedSelected: {
-                            VideoPlayerManager.shared.setRate(speed)
-                            showSpeedMenu = false
-                        }, onClose: { showSpeedMenu = false })
+                        VStack(spacing: 12) {
+                            ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { sp in
+                                Button(action: {
+                                    speed = sp
+                                    VideoPlayerManager.shared.setRate(speed)
+                                    showSpeedMenu = false
+                                }) {
+                                    Text("\(sp)x")
+                                        .foregroundColor(.white)
+                                        .padding(.vertical, 8)
+                                        .frame(width: 80)
+                                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
+                                        .cornerRadius(8)
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(Color.black.opacity(0.8))
+                        .cornerRadius(12)
+                        .transition(.scale)
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation { showSpeedMenu = false }
+                            }
+                        }
                     }
                 }
                 
@@ -118,7 +170,9 @@ struct ContentView: View {
                     VideoPlayerManager.shared.loadVideo(url: firstURL, autoPlay: true)
                 }
             }
-            .onTapGesture(count: 2) { captureScreenshot() }
+            .onTapGesture(count: 2) {
+                captureScreenshot()
+            }
             .onLongPressGesture(minimumDuration: 0.5) {
                 showSpeedMenu.toggle()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -173,92 +227,11 @@ struct ContentView: View {
             print("截图失败: \(error)")
         }
     }
-}
-
-// MARK: - 控制栏子视图
-struct ControlBarView: View {
-    @Binding var currentTime: TimeInterval
-    let duration: TimeInterval
-    var body: some View {
-        VStack {
-            Spacer()
-            VStack(spacing: 8) {
-                Slider(value: Binding(
-                    get: { currentTime },
-                    set: { VideoPlayerManager.shared.seek(to: $0) }
-                ), in: 0...max(duration, 1))
-                .accentColor(.white)
-                .padding(.horizontal, 20)
-                
-                HStack {
-                    Text(formatTime(currentTime)).font(.caption).foregroundColor(.white)
-                    Spacer()
-                    Text(formatTime(duration)).font(.caption).foregroundColor(.white)
-                }
-                .padding(.horizontal, 20)
-            }
-            .padding(.bottom, 30)
-            .background(Color.black.opacity(0.5))
-        }
-        .transition(.opacity)
-    }
+    
     private func formatTime(_ seconds: TimeInterval) -> String {
         if seconds.isNaN || seconds.isInfinite { return "00:00" }
         let total = Int(seconds)
         return String(format: "%02d:%02d", total / 60, total % 60)
-    }
-}
-
-// MARK: - 文件名浮层子视图
-struct FileNameOverlayView: View {
-    let fileName: String
-    var body: some View {
-        VStack {
-            Text(fileName)
-                .font(.caption)
-                .padding(8)
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(8)
-                .foregroundColor(.white)
-                .padding(.top, 50)
-            Spacer()
-        }
-        .transition(.opacity)
-    }
-}
-
-// MARK: - 倍速菜单子视图
-struct SpeedMenuView: View {
-    @Binding var speed: Float
-    let onSpeedSelected: () -> Void
-    let onClose: () -> Void
-    let speeds: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            ForEach(speeds, id: \.self) { sp in
-                Button(action: {
-                    speed = sp
-                    onSpeedSelected()
-                }) {
-                    Text("\(sp)x")
-                        .foregroundColor(.white)
-                        .padding(.vertical, 8)
-                        .frame(width: 80)
-                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
-                        .cornerRadius(8)
-                }
-            }
-        }
-        .padding()
-        .background(Color.black.opacity(0.8))
-        .cornerRadius(12)
-        .transition(.scale)
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                withAnimation { onClose() }
-            }
-        }
     }
 }
 
