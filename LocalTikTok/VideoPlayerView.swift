@@ -85,6 +85,7 @@ struct VideoPlayerView: View {
             }
         }
         .onChange(of: isActive) { newValue in
+            // 当激活状态变化时，控制播放/暂停
             if playerReady {
                 if newValue {
                     player?.play()
