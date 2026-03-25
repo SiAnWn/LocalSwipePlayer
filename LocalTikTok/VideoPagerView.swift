@@ -40,6 +40,7 @@ struct VideoPagerView: UIViewControllerRepresentable {
         var parent: VideoPagerView
         var lastIndex: Int = 0
         private var isRandomJumping = false
+        private var isSwipingUpWithNoPrevious = false
         
         init(_ parent: VideoPagerView) {
             self.parent = parent
@@ -53,49 +54,54 @@ struct VideoPagerView: UIViewControllerRepresentable {
             return VideoPageViewController(videoURL: parent.videoURLs[index + 1])
         }
         
-        // 向上滑动：返回上一个视频（作为过渡）
+        // 向上滑动：返回 nil，避免系统创建上一个视频的视图控制器（消除中间视频闪现）
         func pageViewController(_ pageViewController: UIPageViewController, viewControllerBefore viewController: UIViewController) -> UIViewController? {
-            guard let currentVC = viewController as? VideoPageViewController,
-                  let index = parent.videoURLs.firstIndex(of: currentVC.videoURL),
-                  index - 1 >= 0 else { return nil }
-            return VideoPageViewController(videoURL: parent.videoURLs[index - 1])
+            // 直接返回 nil，向上滑动时不显示任何页面，当前页保持不变
+            // 这样滑动过程中用户不会看到上一个视频，我们将在滑动结束时直接随机跳转
+            return nil
         }
         
-        // 滑动开始时记录当前页索引
+        // 滑动开始时记录当前页索引，并判断是否有上一页（这里总是无，因为 viewControllerBefore 返回 nil）
         func pageViewController(_ pageViewController: UIPageViewController, willTransitionTo pendingViewControllers: [UIViewController]) {
             if let currentVC = pageViewController.viewControllers?.first as? VideoPageViewController,
                let index = parent.videoURLs.firstIndex(of: currentVC.videoURL) {
                 lastIndex = index
             }
+            // 如果 pendingViewControllers 为空，说明向上滑动且没有可用的前一页，标记以便在结束时处理随机跳转
+            isSwipingUpWithNoPrevious = pendingViewControllers.isEmpty
         }
         
         // 滑动完成后处理
         func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
-            guard completed,
-                  let currentVC = pageViewController.viewControllers?.first as? VideoPageViewController,
-                  let newIndex = parent.videoURLs.firstIndex(of: currentVC.videoURL) else { return }
-            
-            // 避免递归
             guard !isRandomJumping else { return }
             
-            // 判断向上滑动（新索引 < 旧索引）
-            if newIndex < lastIndex && parent.videoURLs.count > 1 {
-                // 随机选择一个不等于新索引的索引
+            // 如果是因为向上滑动且没有可用的前一页（即 isSwipingUpWithNoPrevious == true），则直接随机跳转
+            if isSwipingUpWithNoPrevious && parent.videoURLs.count > 1 {
+                // 随机选择一个不等于当前索引的索引
                 var randomIndex = Int.random(in: 0..<parent.videoURLs.count)
-                while randomIndex == newIndex {
+                while randomIndex == lastIndex {
                     randomIndex = Int.random(in: 0..<parent.videoURLs.count)
                 }
                 isRandomJumping = true
-                // 直接在当前视图控制器上替换视频，不替换视图控制器本身，无闪烁
-                let randomURL = parent.videoURLs[randomIndex]
-                currentVC.replaceVideo(with: randomURL)
-                parent.currentIndex = randomIndex
+                // 直接在当前视图控制器上替换视频，无闪烁
+                if let currentVC = pageViewController.viewControllers?.first as? VideoPageViewController {
+                    let randomURL = parent.videoURLs[randomIndex]
+                    currentVC.replaceVideo(with: randomURL)
+                    parent.currentIndex = randomIndex
+                }
                 isRandomJumping = false
-            } else {
-                // 向下滑动或未变，正常更新 currentIndex
-                parent.currentIndex = newIndex
+                isSwipingUpWithNoPrevious = false
+                return
             }
-            lastIndex = parent.currentIndex
+            
+            // 向下滑动：正常更新索引（由于向上滑动不会完成过渡，所以这里只会处理向下滑动）
+            if completed,
+               let currentVC = pageViewController.viewControllers?.first as? VideoPageViewController,
+               let newIndex = parent.videoURLs.firstIndex(of: currentVC.videoURL) {
+                parent.currentIndex = newIndex
+                lastIndex = newIndex
+            }
+            isSwipingUpWithNoPrevious = false
         }
     }
 }
