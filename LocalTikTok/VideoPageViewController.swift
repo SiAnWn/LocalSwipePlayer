@@ -1,6 +1,7 @@
 import UIKit
 import SwiftUI
 import AVFoundation
+import MediaPlayer   // 添加此导入以使用 MPVolumeView
 
 class VideoPageViewController: UIPageViewController, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
     private var viewControllersCache: [UIViewController] = []
