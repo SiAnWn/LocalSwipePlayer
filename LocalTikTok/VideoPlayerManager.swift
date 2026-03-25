@@ -83,7 +83,6 @@ class VideoPlayerManager: ObservableObject {
         player?.rate = rate
     }
     
-    // 公开方法获取播放器的 layer
     func getPlayerLayer() -> AVPlayerLayer? {
         guard let player = player else { return nil }
         let layer = AVPlayerLayer(player: player)
