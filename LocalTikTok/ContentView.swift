@@ -27,14 +27,12 @@ struct ContentView: View {
                         videos: videoModel.videos,
                         currentIndex: $currentIndex,
                         onVideoChanged: { newURL in
-                            // 当滚动到新视频时，通知播放器加载
                             VideoPlayerManager.shared.loadVideo(url: newURL, autoPlay: true)
                         }
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .ignoresSafeArea()
                     .onAppear {
-                        // 初始加载第一个视频
                         if let firstURL = videoModel.videos.first {
                             VideoPlayerManager.shared.loadVideo(url: firstURL, autoPlay: true)
                         }
@@ -76,7 +74,6 @@ struct ContentView: View {
                                 } else if currentIndex >= videoModel.videos.count {
                                     currentIndex = videoModel.videos.count - 1
                                 }
-                                // 如果删除后还有视频，重新加载当前视频
                                 if !videoModel.videos.isEmpty {
                                     VideoPlayerManager.shared.loadVideo(url: videoModel.videos[currentIndex], autoPlay: true)
                                 } else {
