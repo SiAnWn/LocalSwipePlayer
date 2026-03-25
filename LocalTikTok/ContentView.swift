@@ -20,12 +20,11 @@ struct ContentView: View {
                 if videoModel.videos.isEmpty {
                     emptyView
                 } else {
-                    // 竖向分页滚动视图
+                    // 滚动视图
                     VerticalPagingScrollView(
                         pageCount: videoModel.videos.count,
                         currentPage: $currentIndex,
                         onPageChanged: { newIndex in
-                            // 当页码改变时（由滚动或随机跳转触发），处理逻辑
                             if newIndex < videoModel.videos.count {
                                 let newURL = videoModel.videos[newIndex]
                                 VideoPlayerManager.shared.loadVideo(url: newURL, autoPlay: true)
@@ -40,8 +39,20 @@ struct ContentView: View {
                     }
                     .ignoresSafeArea()
                     
-                    // 叠加控制栏
-                    controlsOverlay
+                    // 控制栏（进度条）
+                    if showControls {
+                        ProgressBarView(currentTime: $currentTime, duration: duration)
+                    }
+                    
+                    // 文件名浮层
+                    if showFileName {
+                        FileNameOverlayView(fileName: videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
+                    }
+                    
+                    // 倍速菜单
+                    if showSpeedMenu {
+                        SpeedMenuOverlay(speed: $speed, isPresented: $showSpeedMenu)
+                    }
                 }
                 
                 // 刷新按钮
@@ -89,83 +100,6 @@ struct ContentView: View {
             .background(Color.blue)
             .cornerRadius(8)
         }
-    }
-    
-    @ViewBuilder
-    private var controlsOverlay: some View {
-        // 进度条
-        if showControls {
-            progressBarView
-        }
-        // 文件名浮层
-        if showFileName {
-            fileNameView
-        }
-        // 倍速菜单
-        if showSpeedMenu {
-            speedMenuView
-        }
-    }
-    
-    private var progressBarView: some View {
-        VStack {
-            Spacer()
-            VStack(spacing: 8) {
-                Slider(value: Binding(
-                    get: { currentTime },
-                    set: { VideoPlayerManager.shared.seek(to: $0) }
-                ), in: 0...max(duration, 1))
-                .accentColor(.white)
-                .padding(.horizontal, 20)
-                
-                HStack {
-                    Text(formatTime(currentTime)).font(.caption).foregroundColor(.white)
-                    Spacer()
-                    Text(formatTime(duration)).font(.caption).foregroundColor(.white)
-                }
-                .padding(.horizontal, 20)
-            }
-            .padding(.bottom, 30)
-            .background(Color.black.opacity(0.5))
-        }
-        .transition(.opacity)
-    }
-    
-    private var fileNameView: some View {
-        VStack {
-            Text(videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
-                .font(.caption)
-                .padding(8)
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(8)
-                .foregroundColor(.white)
-                .padding(.top, 50)
-            Spacer()
-        }
-        .transition(.opacity)
-    }
-    
-    private var speedMenuView: some View {
-        VStack(spacing: 12) {
-            ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { sp in
-                Button(action: {
-                    speed = sp
-                    VideoPlayerManager.shared.setRate(speed)
-                    showSpeedMenu = false
-                }) {
-                    Text("\(sp)x")
-                        .foregroundColor(.white)
-                        .padding(.vertical, 8)
-                        .frame(width: 80)
-                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
-                        .cornerRadius(8)
-                }
-            }
-        }
-        .padding()
-        .background(Color.black.opacity(0.8))
-        .cornerRadius(12)
-        .transition(.scale)
     }
     
     private var refreshButton: some View {
@@ -260,7 +194,98 @@ struct ContentView: View {
     }
 }
 
-// MARK: - 竖向分页滚动视图（兼容 iOS 15，支持向上滑动随机跳转）
+// MARK: - 进度条视图
+struct ProgressBarView: View {
+    @Binding var currentTime: TimeInterval
+    let duration: TimeInterval
+    
+    var body: some View {
+        VStack {
+            Spacer()
+            VStack(spacing: 8) {
+                Slider(value: Binding(
+                    get: { currentTime },
+                    set: { VideoPlayerManager.shared.seek(to: $0) }
+                ), in: 0...max(duration, 1))
+                .accentColor(.white)
+                .padding(.horizontal, 20)
+                
+                HStack {
+                    Text(formatTime(currentTime)).font(.caption).foregroundColor(.white)
+                    Spacer()
+                    Text(formatTime(duration)).font(.caption).foregroundColor(.white)
+                }
+                .padding(.horizontal, 20)
+            }
+            .padding(.bottom, 30)
+            .background(Color.black.opacity(0.5))
+        }
+        .transition(.opacity)
+    }
+    
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        if seconds.isNaN || seconds.isInfinite { return "00:00" }
+        let total = Int(seconds)
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+}
+
+// MARK: - 文件名浮层视图
+struct FileNameOverlayView: View {
+    let fileName: String
+    
+    var body: some View {
+        VStack {
+            Text(fileName)
+                .font(.caption)
+                .padding(8)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(8)
+                .foregroundColor(.white)
+                .padding(.top, 50)
+            Spacer()
+        }
+        .transition(.opacity)
+    }
+}
+
+// MARK: - 倍速菜单视图
+struct SpeedMenuOverlay: View {
+    @Binding var speed: Float
+    @Binding var isPresented: Bool
+    
+    let speeds: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            ForEach(speeds, id: \.self) { sp in
+                Button(action: {
+                    speed = sp
+                    VideoPlayerManager.shared.setRate(speed)
+                    isPresented = false
+                }) {
+                    Text("\(sp)x")
+                        .foregroundColor(.white)
+                        .padding(.vertical, 8)
+                        .frame(width: 80)
+                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
+                        .cornerRadius(8)
+                }
+            }
+        }
+        .padding()
+        .background(Color.black.opacity(0.8))
+        .cornerRadius(12)
+        .transition(.scale)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                withAnimation { isPresented = false }
+            }
+        }
+    }
+}
+
+// MARK: - 竖向分页滚动视图（兼容 iOS 15）
 struct VerticalPagingScrollView<Content: View>: UIViewRepresentable {
     let pageCount: Int
     @Binding var currentPage: Int
