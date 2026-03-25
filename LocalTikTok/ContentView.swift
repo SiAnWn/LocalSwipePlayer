@@ -89,14 +89,12 @@ struct VideoPageViewControllerWrapper: UIViewControllerRepresentable {
                 currentIndex = newIndex
                 videoModel.currentIndex = newIndex
                 videoModel.savePosition()
-                // 随机播放：向上滑动时随机跳转
-                // 这里需要判断方向，但 PageViewController 没有提供方向信息，所以我们可以在 VideoPageViewController 中实现随机逻辑
             }
         }
         return vc
     }
     
     func updateUIViewController(_ uiViewController: VideoPageViewController, context: Context) {
-        // 不需要更新
+        // 无需更新，因为滚动时会自动触发
     }
 }
