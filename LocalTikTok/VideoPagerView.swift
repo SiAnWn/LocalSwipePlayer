@@ -15,7 +15,6 @@ struct VideoPagerView: UIViewControllerRepresentable {
         pageVC.dataSource = context.coordinator
         pageVC.delegate = context.coordinator
         
-        // 初始页
         if videoURLs.indices.contains(currentIndex) {
             let initialVC = VideoPageViewController(videoURL: videoURLs[currentIndex])
             pageVC.setViewControllers([initialVC], direction: .forward, animated: false)
@@ -24,7 +23,7 @@ struct VideoPagerView: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ pageVC: UIPageViewController, context: Context) {
-        // 如果外部索引改变，手动切换
+        // 如果外部索引改变（如删除视频后），手动切换
         if let currentVC = pageVC.viewControllers?.first as? VideoPageViewController,
            currentVC.videoURL != videoURLs[currentIndex] {
             let newVC = VideoPageViewController(videoURL: videoURLs[currentIndex])
@@ -46,7 +45,7 @@ struct VideoPagerView: UIViewControllerRepresentable {
             self.parent = parent
         }
         
-        // 返回下一页
+        // 返回下一页（向下滑动）
         func pageViewController(_ pageViewController: UIPageViewController, viewControllerAfter viewController: UIViewController) -> UIViewController? {
             guard let currentVC = viewController as? VideoPageViewController,
                   let index = parent.videoURLs.firstIndex(of: currentVC.videoURL),
@@ -54,7 +53,7 @@ struct VideoPagerView: UIViewControllerRepresentable {
             return VideoPageViewController(videoURL: parent.videoURLs[index + 1])
         }
         
-        // 返回上一页
+        // 返回上一页（向上滑动）—— 保持顺序返回，以便在 didFinishAnimating 中做随机跳转
         func pageViewController(_ pageViewController: UIPageViewController, viewControllerBefore viewController: UIViewController) -> UIViewController? {
             guard let currentVC = viewController as? VideoPageViewController,
                   let index = parent.videoURLs.firstIndex(of: currentVC.videoURL),
@@ -62,18 +61,47 @@ struct VideoPagerView: UIViewControllerRepresentable {
             return VideoPageViewController(videoURL: parent.videoURLs[index - 1])
         }
         
-        // 页面切换完成时更新 currentIndex
+        // 记录滑动开始前的索引
+        func pageViewController(_ pageViewController: UIPageViewController, willTransitionTo pendingViewControllers: [UIViewController]) {
+            if let currentVC = pageViewController.viewControllers?.first as? VideoPageViewController,
+               let currentIndex = parent.videoURLs.firstIndex(of: currentVC.videoURL) {
+                lastIndex = currentIndex
+            }
+        }
+        
+        // 滑动完成后，判断方向并决定是否随机跳转
         func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
             guard completed,
                   let currentVC = pageViewController.viewControllers?.first as? VideoPageViewController,
-                  let index = parent.videoURLs.firstIndex(of: currentVC.videoURL) else { return }
-            parent.currentIndex = index
-            lastIndex = index
+                  let newIndex = parent.videoURLs.firstIndex(of: currentVC.videoURL) else { return }
+            
+            // 更新 currentIndex
+            parent.currentIndex = newIndex
+            
+            // 判断是否向上滑动（新索引 < 旧索引）
+            if newIndex < lastIndex && parent.videoURLs.count > 1 {
+                // 随机选择一个不等于新索引的索引
+                var randomIndex = Int.random(in: 0..<parent.videoURLs.count)
+                while randomIndex == newIndex {
+                    randomIndex = Int.random(in: 0..<parent.videoURLs.count)
+                }
+                // 跳转到随机页
+                let randomVC = VideoPageViewController(videoURL: parent.videoURLs[randomIndex])
+                // 使用动画，方向为向前（避免方向冲突）
+                pageViewController.setViewControllers([randomVC], direction: .forward, animated: true) { [weak self] _ in
+                    // 更新外部索引
+                    self?.parent.currentIndex = randomIndex
+                    self?.lastIndex = randomIndex
+                }
+            } else {
+                // 正常更新 lastIndex
+                lastIndex = newIndex
+            }
         }
     }
 }
 
-// 每个页面的视图控制器
+// 每个页面的视图控制器（保持不变）
 class VideoPageViewController: UIViewController {
     let videoURL: URL
     private var playerViewController: AVPlayerViewController?
@@ -97,14 +125,12 @@ class VideoPageViewController: UIViewController {
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // 页面将要显示时，确保播放
         player?.play()
         isPlaying = true
     }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        // 页面消失时暂停
         player?.pause()
         isPlaying = false
     }
@@ -117,7 +143,7 @@ class VideoPageViewController: UIViewController {
         
         let playerVC = AVPlayerViewController()
         playerVC.player = player
-        playerVC.showsPlaybackControls = true  // 显示系统自带控件（包含进度条、暂停/播放）
+        playerVC.showsPlaybackControls = true
         playerVC.videoGravity = .resizeAspectFill
         playerVC.view.frame = view.bounds
         playerVC.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -127,7 +153,6 @@ class VideoPageViewController: UIViewController {
         playerVC.didMove(toParent: self)
         self.playerViewController = playerVC
         
-        // 监听播放结束，自动循环
         NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player?.currentItem,
@@ -136,9 +161,6 @@ class VideoPageViewController: UIViewController {
             self?.player?.seek(to: .zero)
             self?.player?.play()
         }
-        
-        // 添加单击手势显示/隐藏控件（系统控件默认点击显示/隐藏，但为了更好的体验，我们不做额外处理，因为 AVPlayerViewController 自带）
-        // 如果需要自定义控制栏，可以添加，但为了简化，使用系统控件足够。
     }
     
     deinit {
