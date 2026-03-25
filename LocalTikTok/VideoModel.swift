@@ -8,7 +8,6 @@ class VideoModel: ObservableObject {
     @Published var currentTime: TimeInterval = 0
     
     private var playerItems: [URL: AVPlayerItem] = [:]
-    // 支持的小写扩展名
     let supportedExtensions = ["mp4", "mov", "m4v", "avi", "mkv", "flv", "3gp", "webm"]
     private let lastIndexKey = "lastVideoIndex"
     private let lastTimeKey = "lastVideoTime"
@@ -20,12 +19,12 @@ class VideoModel: ObservableObject {
     
     func loadVideos() {
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        // 调试：打印 Documents 路径（可在 Xcode 控制台查看）
+        // 调试输出（仅开发时可见，不影响构建）
         print("Documents 路径: \(documentsPath.path)")
         
         do {
             let allFiles = try FileManager.default.contentsOfDirectory(at: documentsPath, includingPropertiesForKeys: nil)
-            print("所有文件: \(allFiles.map { $0.lastPathComponent })")  // 调试
+            print("所有文件: \(allFiles.map { $0.lastPathComponent })")
             
             // 不区分大小写匹配扩展名
             let videoFiles = allFiles.filter { url in
@@ -38,7 +37,6 @@ class VideoModel: ObservableObject {
                 if self.currentIndex >= self.videos.count {
                     self.currentIndex = max(0, self.videos.count - 1)
                 }
-                // 调试：打印找到的视频文件
                 print("找到视频: \(self.videos.map { $0.lastPathComponent })")
             }
         } catch {
