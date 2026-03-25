@@ -34,13 +34,24 @@ struct ContentView: View {
                         }
                         .ignoresSafeArea()
                         
-                        // 控制层叠加
-                        controlsOverlay
+                        // 控制栏叠加（进度条）
+                        if showControls {
+                            controlsView
+                        }
+                        
+                        // 文件名浮层
+                        if showFileName {
+                            fileNameOverlay
+                        }
+                        
+                        // 倍速菜单
+                        if showSpeedMenu {
+                            speedMenuView
+                        }
                     }
                     .gesture(
                         DragGesture()
                             .onEnded { value in
-                                // 向上滑动随机跳转
                                 if value.translation.height < -50 && videoModel.videos.count > 1 {
                                     var randomIndex = Int.random(in: 0..<videoModel.videos.count)
                                     while randomIndex == currentIndex {
@@ -54,7 +65,7 @@ struct ContentView: View {
                     )
                 }
                 
-                // 右上角刷新按钮
+                // 刷新按钮
                 Button(action: { videoModel.loadVideos() }) {
                     Image(systemName: "arrow.clockwise")
                         .padding(12)
@@ -64,7 +75,7 @@ struct ContentView: View {
                 }
                 .padding()
                 
-                // 左下角删除按钮
+                // 删除按钮
                 if !videoModel.videos.isEmpty {
                     Button(action: { showDeleteConfirm = true }) {
                         Image(systemName: "trash")
@@ -134,72 +145,68 @@ struct ContentView: View {
         }
     }
     
-    // 控制栏、文件名、倍速菜单的叠加层
-    @ViewBuilder
-    private var controlsOverlay: some View {
-        // 进度条
-        if showControls {
-            VStack {
-                Spacer()
-                VStack(spacing: 8) {
-                    Slider(value: Binding(
-                        get: { currentTime },
-                        set: { VideoPlayerManager.shared.seek(to: $0) }
-                    ), in: 0...max(duration, 1))
-                    .accentColor(.white)
-                    .padding(.horizontal, 20)
-                    
-                    HStack {
-                        Text(formatTime(currentTime)).font(.caption).foregroundColor(.white)
-                        Spacer()
-                        Text(formatTime(duration)).font(.caption).foregroundColor(.white)
-                    }
-                    .padding(.horizontal, 20)
+    // 进度条控制栏
+    private var controlsView: some View {
+        VStack {
+            Spacer()
+            VStack(spacing: 8) {
+                Slider(value: Binding(
+                    get: { currentTime },
+                    set: { VideoPlayerManager.shared.seek(to: $0) }
+                ), in: 0...max(duration, 1))
+                .accentColor(.white)
+                .padding(.horizontal, 20)
+                
+                HStack {
+                    Text(formatTime(currentTime)).font(.caption).foregroundColor(.white)
+                    Spacer()
+                    Text(formatTime(duration)).font(.caption).foregroundColor(.white)
                 }
-                .padding(.bottom, 30)
-                .background(Color.black.opacity(0.5))
+                .padding(.horizontal, 20)
             }
-            .transition(.opacity)
+            .padding(.bottom, 30)
+            .background(Color.black.opacity(0.5))
         }
-        
-        // 文件名浮层
-        if showFileName {
-            VStack {
-                Text(videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
-                    .font(.caption)
-                    .padding(8)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(8)
-                    .foregroundColor(.white)
-                    .padding(.top, 50)
-                Spacer()
-            }
-            .transition(.opacity)
+        .transition(.opacity)
+    }
+    
+    // 文件名浮层
+    private var fileNameOverlay: some View {
+        VStack {
+            Text(videoModel.videos[safe: currentIndex]?.lastPathComponent ?? "")
+                .font(.caption)
+                .padding(8)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(8)
+                .foregroundColor(.white)
+                .padding(.top, 50)
+            Spacer()
         }
-        
-        // 倍速菜单
-        if showSpeedMenu {
-            VStack(spacing: 12) {
-                ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { sp in
-                    Button(action: {
-                        speed = sp
-                        VideoPlayerManager.shared.setRate(speed)
-                        showSpeedMenu = false
-                    }) {
-                        Text("\(sp)x")
-                            .foregroundColor(.white)
-                            .padding(.vertical, 8)
-                            .frame(width: 80)
-                            .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
-                            .cornerRadius(8)
-                    }
+        .transition(.opacity)
+    }
+    
+    // 倍速菜单
+    private var speedMenuView: some View {
+        VStack(spacing: 12) {
+            ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { sp in
+                Button(action: {
+                    speed = sp
+                    VideoPlayerManager.shared.setRate(speed)
+                    showSpeedMenu = false
+                }) {
+                    Text("\(sp)x")
+                        .foregroundColor(.white)
+                        .padding(.vertical, 8)
+                        .frame(width: 80)
+                        .background(speed == sp ? Color.blue : Color.black.opacity(0.7))
+                        .cornerRadius(8)
                 }
             }
-            .padding()
-            .background(Color.black.opacity(0.8))
-            .cornerRadius(12)
-            .transition(.scale)
         }
+        .padding()
+        .background(Color.black.opacity(0.8))
+        .cornerRadius(12)
+        .transition(.scale)
     }
     
     // MARK: - 辅助功能
